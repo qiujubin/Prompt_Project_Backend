@@ -1,25 +1,88 @@
-"""绘图接口。
-
-提供绘图记录的创建与列表查询（示例）。"""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
+from typing import Optional
+from pydantic import BaseModel
+
 from database import get_db
 from models.drawing import Drawing
-from schemas.drawing import DrawingCreate, DrawingRead
-from typing import List
+from models.user import User
 
 router = APIRouter(prefix="/drawings")
 
-@router.post("/", response_model=DrawingRead)
-def create_drawing(payload: DrawingCreate, db: Session = Depends(get_db)):
-    """创建一个绘图记录。"""
-    d = Drawing(prompt=payload.prompt, negative_prompt=payload.negative_prompt)
-    db.add(d)
-    db.commit()
-    db.refresh(d)
-    return d
+class DrawingCreate(BaseModel):
+    user_id: int
+    prompt: str
+    negative_prompt: Optional[str] = None
+    model_name: str
+    image_url: Optional[str] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    seed: Optional[str] = None
+    ai_response_time_ms: Optional[int] = None
 
-@router.get("/", response_model=List[DrawingRead])
-def list_drawings(db: Session = Depends(get_db)):
-    """按时间倒序列出绘图记录。"""
-    return db.query(Drawing).order_by(Drawing.id.desc()).all()
+class DrawingPublicUpdate(BaseModel):
+    is_public: bool
+
+class DrawingStatusUpdate(BaseModel):
+    status: str
+
+@router.post("/create")
+def create_drawing(drawing_in: DrawingCreate, db: Session = Depends(get_db)):
+    """
+    创建绘图记录。
+    状态默认为 'finish'。
+    """
+    # 验证用户是否存在
+    user = db.query(User).filter(User.id == drawing_in.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    new_drawing = Drawing(
+        user_id=drawing_in.user_id,
+        prompt=drawing_in.prompt,
+        negative_prompt=drawing_in.negative_prompt,
+        model_name=drawing_in.model_name,
+        image_url=drawing_in.image_url,
+        width=drawing_in.width,
+        height=drawing_in.height,
+        seed=drawing_in.seed,
+        ai_response_time_ms=drawing_in.ai_response_time_ms,
+        status="finish"  # 默认状态
+    )
+    db.add(new_drawing)
+    db.commit()
+    db.refresh(new_drawing)
+    
+    return {"code": 200, "msg": "绘图记录创建成功", "data": new_drawing}
+
+@router.put("/{drawing_id}/public")
+def update_drawing_public(drawing_id: int, update_in: DrawingPublicUpdate, db: Session = Depends(get_db)):
+    """
+    根据ID修改绘图的公开状态 (is_public)。
+    """
+    drawing = db.query(Drawing).filter(Drawing.id == drawing_id).first()
+    if not drawing:
+        raise HTTPException(status_code=404, detail="绘图记录不存在")
+    
+    drawing.is_public = update_in.is_public
+    db.commit()
+    db.refresh(drawing)
+    
+    return {"code": 200, "msg": "公开状态更新成功", "data": drawing}
+
+@router.put("/{drawing_id}/status")
+def update_drawing_status(drawing_id: int, update_in: DrawingStatusUpdate, db: Session = Depends(get_db)):
+    """
+    根据ID修改绘图的状态 (status)。
+    例如设置为 'delete' 或其他。
+    """
+    drawing = db.query(Drawing).filter(Drawing.id == drawing_id).first()
+    if not drawing:
+        raise HTTPException(status_code=404, detail="绘图记录不存在")
+    
+    drawing.status = update_in.status
+    db.commit()
+    db.refresh(drawing)
+    
+    return {"code": 200, "msg": "状态更新成功", "data": drawing}

@@ -12,14 +12,31 @@
 - `POST /auth/bind_wechat` 绑定微信 `openid` 到用户（唯一性校验）
 
 ## 用户 `/api/users/*`
+- `GET /users/` 获取用户列表（仅管理员，分页+搜索）
 - `GET /users/me` 获取当前登录用户信息（需 `Authorization: Bearer <token>`）
+- `DELETE /users/{id}` 根据ID删除用户（仅管理员）
+- `POST /users/update_username` 修改用户名（参数：user_id, username）
+- `POST /users/update_avatar` 修改头像（参数：user_id, avatar_url）
+- `POST /users/update_phone` 用户添加或修改手机号（参数：user_id, phone）
+- `POST /users/update_email` 用户添加或修改邮箱（参数：user_id, email）
+- `POST /users/update_password` 用户修改密码（参数：user_id, password）
+
+## 提示词层级 `/api/prompts/*`
+- `GET /prompts/categories` 获取所有大分类
+- `GET /prompts/categories/{id}/subcategories` 获取指定大分类下的小分类
+- `GET /prompts/subcategories/{id}/keywords` 获取指定小分类下的提示词
+- `GET /prompts/categories/{id}/tree` 获取指定大分类下的完整树结构（小分类+提示词）
+- `DELETE /prompts/keywords/{id}` 根据ID删除提示词
+- `POST /prompts/logs` 记录提示词使用日志（参数：user_id, small_category_id, weight, is_negative, drawing_id）
 
 ## 首页与菜单 `/api/home/*`
 - `GET /home/getPromptCatagory` 返回分类树：`{ code, msg, data: { promptCatagory: [...] } }`
 - `POST /home/getDropdown` 返回动态菜单：`{ code, msg, data: { role, token, dropdownList } }`
 
 ## 绘图 `/api/drawings/*`
-- `POST /drawings/` 创建绘图记录
+- `POST /drawings/create` 创建绘图记录（默认状态 'finish'）
+- `PUT /drawings/{id}/public` 修改绘图公开状态（参数：is_public）
+- `PUT /drawings/{id}/status` 修改绘图状态（参数：status）
 - `GET /drawings/` 列出绘图记录（倒序）
 
 ## 分析数据 `/api/userCenter/*`
@@ -50,10 +67,13 @@ POST /api/admin/prompt_categories
 ## 复合主键资源
 - 收藏 `/api/admin/user_favorites`
   - `GET /` 列表（可选 `?user_id=`）
-  - `POST /?user_id=&keyword_id=` 创建或覆盖
+  - `POST /?user_id=&keyword_id=` 创建或覆盖（兼容旧接口）
+  - `POST /add?user_id=&keyword_id=` 添加收藏（新接口，自动去重）
+  - `POST /remove?user_id=&keyword_id=` 取消收藏
   - `DELETE /?user_id=&keyword_id=` 删除
 - 使用统计 `/api/admin/user_prompt_keywords`
   - `GET /` 列表（可选 `?user_id=`）
+  - `POST /increment` 记录使用：不存在则创建(count=1)，存在则+1（参数：user_id, keyword_id）
   - `POST /?user_id=&keyword_id=&used_count=` 创建或覆盖
   - `PUT /?user_id=&keyword_id=&used_count=` 更新使用次数
   - `DELETE /?user_id=&keyword_id=` 删除

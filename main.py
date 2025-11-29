@@ -11,6 +11,7 @@ from api.v1.users import router as users_router
 from api.v1.drawings import router as drawings_router
 from api.v1.analytics import router as analytics_router
 from api.v1.home import router as home_router
+from api.v1.prompts import router as prompts_router
 from middleware import MetricsMiddleware
 from api.v1.crud import router as admin_crud_router
 from api.v1.favorites import fav_router, upk_router
@@ -28,6 +29,7 @@ app.add_middleware(
 )
 
 app.include_router(home_router, prefix="/api")
+app.include_router(prompts_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(drawings_router, prefix="/api")
