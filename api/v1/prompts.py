@@ -17,6 +17,7 @@ router = APIRouter(prefix="/prompts")
 
 class PromptLogCreate(BaseModel):
     user_id: int
+    prompt_id:int
     drawing_id: Optional[int] = None
     small_category_id: int
     weight: float
@@ -33,8 +34,13 @@ def create_prompt_log(log_in: PromptLogCreate, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
+    prompt = db.query(PromptKeyword).filter(PromptKeyword.id == log_in.prompt_id).first()
+    if not prompt:
+      raise HTTPException(status_code=404,detail="关键词不存在")
+
     new_log = PromptLog(
         user_id=log_in.user_id,
+        prompt_id = log_in.prompt_id,
         drawing_id=log_in.drawing_id,
         small_category_id=log_in.small_category_id,
         weight=log_in.weight,
@@ -46,12 +52,87 @@ def create_prompt_log(log_in: PromptLogCreate, db: Session = Depends(get_db)):
     
     return {"code": 200, "msg": "日志记录成功", "data": new_log}
 
+@router.get("/logs")
+def get_prompt_logs(
+    user_id: Optional[int] = None,
+    page: int = 1,
+    size: int = 20,
+    db: Session = Depends(get_db)
+):
+    """
+    获取提示词使用日志。
+    - 如果提供 user_id，则获取该用户的日志。
+    - 如果不提供 user_id (仅管理员)，则获取所有日志。
+    """
+    q = db.query(PromptLog)
+    if user_id:
+        q = q.filter(PromptLog.user_id == user_id)
+    
+    total = q.count()
+    logs = q.order_by(PromptLog.used_at.desc())\
+            .offset((page - 1) * size)\
+            .limit(size)\
+            .all()
+            
+    return {"code": 200, "msg": "OK", "data": logs, "total": total}
+
+class PromptKeywordCreate(BaseModel):
+    user_id: int
+    small_category_id: int
+    word: str
+
+@router.post("/keywords")
+def create_keyword(keyword_in: PromptKeywordCreate, db: Session = Depends(get_db)):
+    """
+    用户添加一个新的提示词在某个小分类上。
+    """
+    # 验证用户
+    user = db.query(User).filter(User.id == keyword_in.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 验证小分类
+    subcategory = db.query(PromptSubcategory).filter(PromptSubcategory.id == keyword_in.small_category_id).first()
+    if not subcategory:
+        raise HTTPException(status_code=404, detail="小分类不存在")
+
+    new_keyword = PromptKeyword(
+        word=keyword_in.word,
+        small_category_id=keyword_in.small_category_id,
+        created_by=keyword_in.user_id
+    )
+    db.add(new_keyword)
+    db.commit()
+    db.refresh(new_keyword)
+
+    return {"code": 200, "msg": "提示词创建成功", "data": new_keyword}
+
 @router.delete("/keywords/{keyword_id}")
-def delete_keyword(keyword_id: int, db: Session = Depends(get_db)):
-    """根据ID删除提示词。"""
+def delete_keyword(keyword_id: int, user_id: int, db: Session = Depends(get_db)):
+    """
+    删除提示词。
+    - 用户只能删除自己创建的。
+    - 管理员可以删除所有。
+    """
+    # 获取操作用户
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 获取提示词
     item = db.query(PromptKeyword).filter(PromptKeyword.id == keyword_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="提示词不存在")
+
+    # 权限检查
+    # 如果是管理员(role='admin')，或者 created_by == user_id，则允许删除
+    # 注意：根据 User 模型定义，role 默认为 'user'
+    is_admin = (user.role == 'admin')
+    is_owner = (item.created_by == user.id)
+
+    if not (is_admin or is_owner):
+        raise HTTPException(status_code=403, detail="无权限删除此提示词")
+
     db.delete(item)
     db.commit()
     return {"code": 200, "msg": "删除成功", "data": True}

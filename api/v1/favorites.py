@@ -7,12 +7,29 @@ from schemas.prompt import PromptKeywordRead
 
 fav_router = APIRouter(prefix="/admin/user_favorites")
 
+from models.prompt_keyword import PromptKeyword
+
 @fav_router.get("/")
 def list_favorites(user_id: int | None = None, db: Session = Depends(get_db)):
-    q = db.query(UserFavorite)
+    """获取收藏列表（包含提示词详情）。"""
+    q = db.query(UserFavorite, PromptKeyword).join(PromptKeyword, UserFavorite.keyword_id == PromptKeyword.id)
     if user_id:
         q = q.filter(UserFavorite.user_id == user_id)
-    return q.all()
+    
+    results = q.all()
+    data = []
+    for fav, keyword in results:
+        data.append({
+            "user_id": fav.user_id,
+            "keyword_id": fav.keyword_id,
+            "favorited_at": fav.favorited_at,
+            "keyword": {
+                "id": keyword.id,
+                "word": keyword.word,
+                "small_category_id": keyword.small_category_id
+            }
+        })
+    return {"code": 200, "msg": "OK", "data": data}
 
 @fav_router.post("/add")
 def add_favorite(user_id: int, keyword_id: int, db: Session = Depends(get_db)):
@@ -59,10 +76,27 @@ upk_router = APIRouter(prefix="/admin/user_prompt_keywords")
 
 @upk_router.get("/")
 def list_user_prompt_keywords(user_id: int | None = None, db: Session = Depends(get_db)):
-    q = db.query(UserPromptKeyword)
+    """获取提示词使用统计（包含提示词详情）。"""
+    q = db.query(UserPromptKeyword, PromptKeyword).join(PromptKeyword, UserPromptKeyword.keyword_id == PromptKeyword.id)
     if user_id:
         q = q.filter(UserPromptKeyword.user_id == user_id)
-    return q.all()
+    
+    results = q.all()
+    data = []
+    for upk, keyword in results:
+        data.append({
+            "user_id": upk.user_id,
+            "keyword_id": upk.keyword_id,
+            "used_count": upk.used_count,
+            "last_used_at": upk.last_used_at,
+            "first_used_at": getattr(upk, 'first_used_at', None),
+            "keyword": {
+                "id": keyword.id,
+                "word": keyword.word,
+                "small_category_id": keyword.small_category_id
+            }
+        })
+    return {"code": 200, "msg": "OK", "data": data}
 
 @upk_router.post("/")
 def create_user_prompt_keyword(user_id: int, keyword_id: int, used_count: int = 1, db: Session = Depends(get_db)):
@@ -87,12 +121,12 @@ def increment_usage(user_id: int, keyword_id: int, db: Session = Depends(get_db)
     
     obj = db.query(UserPromptKeyword).filter(UserPromptKeyword.user_id == user_id, UserPromptKeyword.keyword_id == keyword_id).first()
     if not obj:
-        obj = UserPromptKeyword(user_id=user_id, keyword_id=keyword_id, used_count=1)
+        obj = UserPromptKeyword(user_id=user_id, keyword_id=keyword_id, used_count=1, first_used_at = func.now())
         db.add(obj)
     else:
         obj.used_count += 1
         obj.last_used_at = func.now()
-    
+   
     db.commit()
     return {"code": 200, "msg": "记录成功", "data": True}
 

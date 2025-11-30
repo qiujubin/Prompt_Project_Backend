@@ -13,4 +13,5 @@ class UserPromptKeyword(Base):
     keyword_id = Column(BigInteger, ForeignKey("prompt_keywords.id"), primary_key=True)
     used_count = Column(Integer, nullable=False, server_default=text("1"))
     last_used_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    first_used_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
 

@@ -26,8 +26,10 @@
 - `GET /prompts/categories/{id}/subcategories` 获取指定大分类下的小分类
 - `GET /prompts/subcategories/{id}/keywords` 获取指定小分类下的提示词
 - `GET /prompts/categories/{id}/tree` 获取指定大分类下的完整树结构（小分类+提示词）
-- `DELETE /prompts/keywords/{id}` 根据ID删除提示词
+- `POST /prompts/keywords` 添加提示词（参数：user_id, small_category_id, word）
+- `DELETE /prompts/keywords/{id}` 删除提示词（参数：user_id，需权限验证）
 - `POST /prompts/logs` 记录提示词使用日志（参数：user_id, small_category_id, weight, is_negative, drawing_id）
+- `GET /prompts/logs` 获取提示词使用日志（可选 `user_id`，分页）
 
 ## 首页与菜单 `/api/home/*`
 - `GET /home/getPromptCatagory` 返回分类树：`{ code, msg, data: { promptCatagory: [...] } }`
@@ -37,11 +39,16 @@
 - `POST /drawings/create` 创建绘图记录（默认状态 'finish'）
 - `PUT /drawings/{id}/public` 修改绘图公开状态（参数：is_public）
 - `PUT /drawings/{id}/status` 修改绘图状态（参数：status）
-- `GET /drawings/` 列出绘图记录（倒序）
+- `GET /drawings/` 获取绘图记录列表（可选 `user_id`，分页）
 
 ## 分析数据 `/api/userCenter/*`
-- `GET /userCenter/getPositiveMaxData` 返回正向分析数据
-- `GET /userCenter/getNegativeMaxData` 返回反向分析数据
+- `GET /userCenter/getPositiveMaxData` 返回正向分析数据（Top 10 提示词）
+- `GET /userCenter/getNegativeMaxData` 返回反向分析数据（Top 10 提示词）
+- `GET /userCenter/getDailyDrawings` 返回最近7天绘图趋势（可选 `?days=`）
+- `GET /userCenter/getModelUsage` 返回模型使用分布（Top 10）
+- `GET /userCenter/getUserGrowth` 返回最近7天用户增长趋势（可选 `?days=`）
+- `GET /userCenter/getActiveUsers` 返回活跃用户排行（Top 10 绘图数）
+- `GET /userCenter/getSubcategoryUsage` 返回热门提示词分类（Top 10）
 
 ## 管理端通用 CRUD `/api/admin/*`
 - `GET /admin/<resource>?page=&size=&q=` 分页列表与模糊查
@@ -66,13 +73,13 @@ POST /api/admin/prompt_categories
 
 ## 复合主键资源
 - 收藏 `/api/admin/user_favorites`
-  - `GET /` 列表（可选 `?user_id=`）
+  - `GET /` 列表（可选 `?user_id=`），返回包含提示词详情
   - `POST /?user_id=&keyword_id=` 创建或覆盖（兼容旧接口）
   - `POST /add?user_id=&keyword_id=` 添加收藏（新接口，自动去重）
   - `POST /remove?user_id=&keyword_id=` 取消收藏
   - `DELETE /?user_id=&keyword_id=` 删除
 - 使用统计 `/api/admin/user_prompt_keywords`
-  - `GET /` 列表（可选 `?user_id=`）
+  - `GET /` 列表（可选 `?user_id=`），返回包含提示词详情
   - `POST /increment` 记录使用：不存在则创建(count=1)，存在则+1（参数：user_id, keyword_id）
   - `POST /?user_id=&keyword_id=&used_count=` 创建或覆盖
   - `PUT /?user_id=&keyword_id=&used_count=` 更新使用次数

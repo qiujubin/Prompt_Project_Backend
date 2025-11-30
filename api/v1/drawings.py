@@ -20,6 +20,7 @@ class DrawingCreate(BaseModel):
     height: Optional[int] = None
     seed: Optional[str] = None
     ai_response_time_ms: Optional[int] = None
+    status: str
 
 class DrawingPublicUpdate(BaseModel):
     is_public: bool
@@ -86,3 +87,27 @@ def update_drawing_status(drawing_id: int, update_in: DrawingStatusUpdate, db: S
     db.refresh(drawing)
     
     return {"code": 200, "msg": "状态更新成功", "data": drawing}
+
+@router.get("/")
+def list_drawings(
+    user_id: Optional[int] = None,
+    page: int = 1,
+    size: int = 20,
+    db: Session = Depends(get_db)
+):
+    """
+    获取绘图记录列表。
+    - 如果提供 user_id，则获取该用户的绘图。
+    - 如果不提供 user_id (仅管理员)，则获取所有绘图。
+    """
+    q = db.query(Drawing)
+    if user_id:
+        q = q.filter(Drawing.user_id == user_id)
+    
+    total = q.count()
+    drawings = q.order_by(Drawing.created_at.desc())\
+            .offset((page - 1) * size)\
+            .limit(size)\
+            .all()
+            
+    return {"code": 200, "msg": "OK", "data": drawings, "total": total}
