@@ -18,7 +18,7 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     exists = db.query(User).filter(User.username == payload.username).first()
     if exists:
         raise HTTPException(status_code=400, detail="用户名已存在")
-    user = User(username=payload.username, email=payload.email, hashed_password=get_password_hash(payload.password))
+    user = User(username=payload.username, hashed_password=get_password_hash(payload.password))
     db.add(user)
     db.commit()
     db.refresh(user)

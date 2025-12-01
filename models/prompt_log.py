@@ -15,5 +15,5 @@ class PromptLog(Base):
     used_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     small_category_id = Column(BigInteger, nullable=False)
     weight = Column(Numeric, nullable=False)
-    is_navigate = Column(Boolean, nullable=True)
+    is_negative = Column(Boolean, nullable=True)
     drawing_id = Column(BigInteger, nullable=True)

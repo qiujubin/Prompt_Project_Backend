@@ -29,4 +29,9 @@ class Settings:
     VERIFICATION_CODE_MAX_ATTEMPTS = int(os.getenv("VERIFICATION_CODE_MAX_ATTEMPTS", "5"))
     VERIFICATION_CODE_RESEND_INTERVAL = int(os.getenv("VERIFICATION_CODE_RESEND_INTERVAL", "60"))
 
+    # AI 配置
+    COMFYUI_HOST = os.getenv("COMFYUI_HOST", "127.0.0.1:8188")
+    AI_API_KEY = os.getenv("AI_API_KEY", "")
+    AI_API_URL = os.getenv("AI_API_URL", "https://api.openai.com/v1")
+
 settings = Settings()

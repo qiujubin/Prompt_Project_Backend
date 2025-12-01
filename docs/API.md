@@ -41,6 +41,13 @@
 - `PUT /drawings/{id}/status` 修改绘图状态（参数：status）
 - `GET /drawings/` 获取绘图记录列表（可选 `user_id`，分页）
 
+## AI 生成 `/api/generation/*`
+- `POST /generation/draw` 触发 AI 绘图（支持 comfyui/external）
+  - 参数: `prompt`, `negative_prompt`, `backend`, `width`, `height`, `seed`, `model_name`
+  - 返回: `{ code, msg, data: { status, prompt_id, ... } }`
+- `GET /generation/status/{backend}/{task_id}` 检查生成任务状态
+  - 返回: `{ code, msg, data: { status: "completed/processing", images: [...] } }`
+
 ## 分析数据 `/api/userCenter/*`
 - `GET /userCenter/getPositiveMaxData` 返回正向分析数据（Top 10 提示词）
 - `GET /userCenter/getNegativeMaxData` 返回反向分析数据（Top 10 提示词）

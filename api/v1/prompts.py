@@ -21,7 +21,7 @@ class PromptLogCreate(BaseModel):
     drawing_id: Optional[int] = None
     small_category_id: int
     weight: float
-    is_negative: Optional[bool] = None  # 映射到 DB 的 is_navigate
+    is_negative: Optional[bool] = None
 
 @router.post("/logs")
 def create_prompt_log(log_in: PromptLogCreate, db: Session = Depends(get_db)):
@@ -44,7 +44,7 @@ def create_prompt_log(log_in: PromptLogCreate, db: Session = Depends(get_db)):
         drawing_id=log_in.drawing_id,
         small_category_id=log_in.small_category_id,
         weight=log_in.weight,
-        is_navigate=log_in.is_negative  # 对应表中的 is_navigate 字段
+        is_negative=log_in.is_negative
     )
     db.add(new_log)
     db.commit()

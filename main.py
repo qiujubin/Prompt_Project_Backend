@@ -15,6 +15,8 @@ from api.v1.prompts import router as prompts_router
 from middleware import MetricsMiddleware
 from api.v1.crud import router as admin_crud_router
 from api.v1.favorites import fav_router, upk_router
+from api.v1.generation import router as generation_router
+from api.v1.community import router as community_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -37,5 +39,7 @@ app.include_router(analytics_router, prefix="/api")
 app.include_router(admin_crud_router, prefix="/api")
 app.include_router(fav_router, prefix="/api")
 app.include_router(upk_router, prefix="/api")
+app.include_router(generation_router, prefix="/api")
+app.include_router(community_router, prefix="/api")
 
 app.add_middleware(MetricsMiddleware)

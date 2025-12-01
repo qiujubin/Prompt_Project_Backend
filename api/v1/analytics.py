@@ -118,14 +118,14 @@ def get_subcategory_usage(db: Session = Depends(get_db)):
 def get_positive_max_data(db: Session = Depends(get_db)):
     """
     正向提示词分析数据 (Top 10)。
-    统计 prompt_logs 中 is_navigate=False 的记录，按 prompt_id 分组计数。
+    统计 prompt_logs 中 is_negative=False 的记录，按 prompt_id 分组计数。
     """
     # 聚合查询：统计每个 prompt_id 的出现次数
     results = db.query(
         PromptLog.prompt_id,
         func.count(PromptLog.prompt_id).label('count')
     ).filter(
-        (PromptLog.is_navigate == False) | (PromptLog.is_navigate == None)
+        (PromptLog.is_negative == False) | (PromptLog.is_negative == None)
     ).group_by(
         PromptLog.prompt_id
     ).order_by(
@@ -157,13 +157,13 @@ def get_positive_max_data(db: Session = Depends(get_db)):
 def get_negative_max_data(db: Session = Depends(get_db)):
     """
     反向提示词分析数据 (Top 10)。
-    统计 prompt_logs 中 is_navigate=True 的记录。
+    统计 prompt_logs 中 is_negative=True 的记录。
     """
     results = db.query(
         PromptLog.prompt_id,
         func.count(PromptLog.prompt_id).label('count')
     ).filter(
-        PromptLog.is_navigate == True
+        PromptLog.is_negative == True
     ).group_by(
         PromptLog.prompt_id
     ).order_by(

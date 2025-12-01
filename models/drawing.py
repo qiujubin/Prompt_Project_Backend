@@ -8,6 +8,7 @@ class Drawing(Base):
 
     对应表：`drawings`
     记录提示词、模型名称、生成图片、尺寸、耗时与公开状态等。
+    新增社区字段：浏览量、点赞数、收藏数、评论数。
     """
     __tablename__ = "drawings"
     id = Column(BigInteger, primary_key=True, index=True)
@@ -22,5 +23,13 @@ class Drawing(Base):
     seed = Column(String(64), nullable=True)
     negative_prompt = Column(Text, nullable=True)
     ai_response_time_ms = Column(Integer, nullable=True)
-    is_public = Column(Boolean, nullable=True)
+    is_public = Column(Boolean, nullable=True, default=False)
+    
+    # 社区互动统计字段
+    view_count = Column(Integer, default=0, server_default=text("0"))
+    like_count = Column(Integer, default=0, server_default=text("0"))
+    favorite_count = Column(Integer, default=0, server_default=text("0"))
+    comment_count = Column(Integer, default=0, server_default=text("0"))
+
     user = relationship("User", back_populates="drawings")
+    comments = relationship("DrawingComment", back_populates="drawing", cascade="all, delete-orphan")
