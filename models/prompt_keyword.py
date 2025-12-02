@@ -11,6 +11,7 @@ class PromptKeyword(Base):
     __tablename__ = "prompt_keywords"
     id = Column(BigInteger, primary_key=True, index=True)
     word = Column(String(256), nullable=False)
+    display_name = Column(String(256), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
     small_category_id = Column(BigInteger, ForeignKey("prompt_subcategories.id"), nullable=True)
     created_by = Column(BigInteger, ForeignKey("users.id"), nullable=True)

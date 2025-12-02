@@ -20,11 +20,15 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     full_name = Column(String(128), nullable=True)
+    signature = Column(Text, nullable=True)
     phone = Column(String(32), nullable=True)
     last_login_at = Column(DateTime(timezone=True), nullable=True)
     source = Column(String(64), nullable=True)
+    credits = Column(BigInteger, default=100, server_default=text("100")) # 初始积分
+    
     drawings = relationship("Drawing", back_populates="user")
     social_accounts = relationship("SocialAccount", back_populates="user")
+    credit_logs = relationship("CreditLog", back_populates="user")
 
 class SocialAccount(Base):
     """社交账号绑定模型。

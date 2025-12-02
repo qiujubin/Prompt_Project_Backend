@@ -12,5 +12,6 @@ class PromptCategory(Base):
     id = Column(BigInteger, primary_key=True, index=True)
     name = Column(String(128), nullable=False)
     display_name = Column(String(256), nullable=False)
+    icon = Column(String(64), nullable=True, default="Box")
     sort_order = Column(Integer, nullable=True, server_default=text("0"))
 

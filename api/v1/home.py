@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models.prompt_category import PromptCategory
 from models.prompt_subcategory import PromptSubcategory
+from models.prompt_keyword import PromptKeyword
 
 router = APIRouter(prefix="/home")
 
@@ -15,15 +16,31 @@ def _categories(db: Session):
     """从数据库聚合生成分类树结构。"""
     cats = db.query(PromptCategory).order_by(PromptCategory.sort_order).all()
     subs = db.query(PromptSubcategory).order_by(PromptSubcategory.sort_order).all()
+    keywords = db.query(PromptKeyword).all() # 如果数据量大应该优化，但目前 seed 数据不多
+    
+    # 构建 Keyword Map: sub_id -> [keywords]
+    kw_map = {}
+    for k in keywords:
+        kw_map.setdefault(k.small_category_id, []).append({
+            "name": k.word,
+            "label": k.display_name or k.word
+        })
+
+    # 构建 Subcategory Map: cat_id -> [subcategories]
     sub_map = {}
     for s in subs:
-        sub_map.setdefault(s.category_id, []).append({"name": s.name, "label": s.display_name})
+        sub_map.setdefault(s.category_id, []).append({
+            "name": s.name, 
+            "label": s.display_name,
+            "children": kw_map.get(s.id, [])
+        })
+        
     result = []
     for c in cats:
         result.append({
             "name": c.name,
             "label": c.display_name,
-            "icon": "Box",
+            "icon": c.icon or "Box",
             "children": sub_map.get(c.id, [])
         })
     return result

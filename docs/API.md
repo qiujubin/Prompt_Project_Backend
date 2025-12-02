@@ -21,6 +21,16 @@
 - `POST /users/update_email` 用户添加或修改邮箱（参数：user_id, email）
 - `POST /users/update_password` 用户修改密码（参数：user_id, password）
 
+## 社区互动 `/api/community/*`
+- `GET /community/feed` 获取社区动态（公开画作）
+  - 参数: `page`, `size`, `sort_by` (newest/hot)
+  - 需 Header 携带 Token 以获取 `is_liked`/`is_favorited` 状态
+- `POST /community/drawings/{id}/like` 点赞/取消点赞
+- `POST /community/drawings/{id}/favorite` 收藏/取消收藏（画作）
+- `POST /community/drawings/{id}/view` 增加浏览量
+- `GET /community/drawings/{id}/comments` 获取评论列表
+- `POST /community/drawings/{id}/comments` 发表评论
+
 ## 提示词层级 `/api/prompts/*`
 - `GET /prompts/categories` 获取所有大分类
 - `GET /prompts/categories/{id}/subcategories` 获取指定大分类下的小分类
@@ -44,8 +54,10 @@
 ## AI 生成 `/api/generation/*`
 - `POST /generation/draw` 触发 AI 绘图（支持 comfyui/external）
   - 参数: `prompt`, `negative_prompt`, `backend`, `width`, `height`, `seed`, `model_name`
+  - 可选自定义配置: `comfyui_host`, `api_key`, `api_url`
   - 返回: `{ code, msg, data: { status, prompt_id, ... } }`
 - `GET /generation/status/{backend}/{task_id}` 检查生成任务状态
+  - 可选参数: `comfyui_host`
   - 返回: `{ code, msg, data: { status: "completed/processing", images: [...] } }`
 
 ## 分析数据 `/api/userCenter/*`
@@ -98,14 +110,4 @@ POST /api/admin/prompt_categories
 
 ## 认证说明
 - 使用 JWT Bearer 令牌访问受限接口：
-  - 请求头：`Authorization: Bearer <token>`
-  - 令牌获取：通过 `/auth/login` 或验证码登录接口
-
-## 错误码与异常
-- 登录失败：`401` + `detail: "认证失败"`
-- 资源不存在：`404` + `detail: "Not found"`
-- 绑定冲突：`400` + `detail: 如 "邮箱已被使用"`
-
-## 备注
-- 验证码接口为示例实现，生产环境需接入真实短信/邮件服务并持久化存储
-- 建议为 `/api/admin/*` 接口增加角色权限控制与审计日志
+  `Authorization: Bearer <your_token>`

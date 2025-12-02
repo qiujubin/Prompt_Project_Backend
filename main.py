@@ -17,10 +17,20 @@ from api.v1.crud import router as admin_crud_router
 from api.v1.favorites import fav_router, upk_router
 from api.v1.generation import router as generation_router
 from api.v1.community import router as community_router
+from api.v1.admin_community import router as admin_community_router
+from api.v1.user_collections import router as user_collections_router
+from api.v1.credits import router as credits_router
+from fastapi.staticfiles import StaticFiles
+import os
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+# Mount static files
+if not os.path.exists("static"):
+    os.makedirs("static")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,6 +47,9 @@ app.include_router(users_router, prefix="/api")
 app.include_router(drawings_router, prefix="/api")
 app.include_router(analytics_router, prefix="/api")
 app.include_router(admin_crud_router, prefix="/api")
+app.include_router(admin_community_router, prefix="/api")
+app.include_router(user_collections_router, prefix="/api")
+app.include_router(credits_router, prefix="/api")
 app.include_router(fav_router, prefix="/api")
 app.include_router(upk_router, prefix="/api")
 app.include_router(generation_router, prefix="/api")

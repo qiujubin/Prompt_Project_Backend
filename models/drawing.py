@@ -23,6 +23,7 @@ class Drawing(Base):
     seed = Column(String(64), nullable=True)
     negative_prompt = Column(Text, nullable=True)
     ai_response_time_ms = Column(Integer, nullable=True)
+    prompt_id = Column(String(64), nullable=True, index=True)  # 关联异步任务ID
     is_public = Column(Boolean, nullable=True, default=False)
     
     # 社区互动统计字段

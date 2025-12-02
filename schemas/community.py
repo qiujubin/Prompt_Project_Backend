@@ -8,7 +8,7 @@ class CommentBase(BaseModel):
     parent_id: Optional[int] = None
 
 class CommentCreate(CommentBase):
-    drawing_id: int
+    pass # drawing_id is in path param usually, but ok if here too
 
 class CommentRead(CommentBase):
     id: int

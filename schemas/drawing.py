@@ -35,6 +35,10 @@ class DrawingRead(BaseModel):
     # User context (optional, filled if user is logged in)
     is_liked: Optional[bool] = False
     is_favorited: Optional[bool] = False
+    
+    # Creator info
+    username: Optional[str] = None
+    avatar_url: Optional[str] = None
 
     class Config:
         from_attributes = True

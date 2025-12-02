@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from database import get_db
 from models.drawing import Drawing
 from models.user import User
+from schemas.drawing import DrawingRead
 
 router = APIRouter(prefix="/drawings")
 
@@ -87,6 +88,24 @@ def update_drawing_status(drawing_id: int, update_in: DrawingStatusUpdate, db: S
     db.refresh(drawing)
     
     return {"code": 200, "msg": "状态更新成功", "data": drawing}
+
+@router.get("/{drawing_id}")
+def get_drawing_detail(drawing_id: int, db: Session = Depends(get_db)):
+    """
+    获取单个绘图记录详情。
+    """
+    drawing = db.query(Drawing).filter(Drawing.id == drawing_id).first()
+    if not drawing:
+        raise HTTPException(status_code=404, detail="绘图记录不存在")
+    
+    # Enrich with user info
+    result = DrawingRead.from_orm(drawing)
+    user = db.query(User).filter(User.id == drawing.user_id).first()
+    if user:
+        result.username = user.username
+        result.avatar_url = user.avatar_url
+        
+    return {"code": 200, "msg": "OK", "data": result}
 
 @router.get("/")
 def list_drawings(
