@@ -38,7 +38,6 @@ def send_email_code(email: str):
     """发送邮箱验证码（示例实现）。"""
     code = code_service.generate("email", email)
     # 在此处集成实际邮件发送
-    print(f"======= DEBUG: Email code for {email} is {code} =======")
     return {"code": 200, "msg": "OK", "data": {"email": email}}
 
 @router.post("/send_sms_code")

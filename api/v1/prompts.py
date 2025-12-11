@@ -12,6 +12,7 @@ from models.prompt_subcategory import PromptSubcategory
 from models.prompt_keyword import PromptKeyword
 from models.prompt_log import PromptLog
 from models.user import User
+from api.v1.users import get_current_user
 
 router = APIRouter(prefix="/prompts")
 
@@ -57,7 +58,8 @@ def get_prompt_logs(
     user_id: Optional[int] = None,
     page: int = 1,
     size: int = 20,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取提示词使用日志。
@@ -66,7 +68,14 @@ def get_prompt_logs(
     """
     q = db.query(PromptLog)
     if user_id:
+        # Check if user is accessing their own logs or is admin
+        if current_user.id != user_id and current_user.role != "admin":
+            raise HTTPException(status_code=403, detail="无权限查看他人日志")
         q = q.filter(PromptLog.user_id == user_id)
+    else:
+        # If no user_id provided, only admin can view all
+        if current_user.role != "admin":
+            raise HTTPException(status_code=403, detail="无权限查看所有日志")
     
     total = q.count()
     logs = q.order_by(PromptLog.used_at.desc())\

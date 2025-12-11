@@ -8,6 +8,7 @@ from database import get_db
 from models.drawing import Drawing
 from models.user import User
 from schemas.drawing import DrawingRead
+from api.v1.users import get_current_user, get_current_user_optional
 
 router = APIRouter(prefix="/drawings")
 
@@ -30,18 +31,15 @@ class DrawingStatusUpdate(BaseModel):
     status: str
 
 @router.post("/create")
-def create_drawing(drawing_in: DrawingCreate, db: Session = Depends(get_db)):
+def create_drawing(drawing_in: DrawingCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     创建绘图记录。
     状态默认为 'finish'。
     """
-    # 验证用户是否存在
-    user = db.query(User).filter(User.id == drawing_in.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-
+    # 使用当前登录用户ID，忽略传入的user_id
+    
     new_drawing = Drawing(
-        user_id=drawing_in.user_id,
+        user_id=current_user.id,
         prompt=drawing_in.prompt,
         negative_prompt=drawing_in.negative_prompt,
         model_name=drawing_in.model_name,
@@ -112,16 +110,24 @@ def list_drawings(
     user_id: Optional[int] = None,
     page: int = 1,
     size: int = 20,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取绘图记录列表。
-    - 如果提供 user_id，则获取该用户的绘图。
+    - 如果提供 user_id，则获取该用户的绘图 (需本人或管理员)。
     - 如果不提供 user_id (仅管理员)，则获取所有绘图。
     """
     q = db.query(Drawing)
     if user_id:
+        # Check permission
+        if current_user.id != user_id and current_user.role != "admin":
+             raise HTTPException(status_code=403, detail="无权限查看他人绘图记录")
         q = q.filter(Drawing.user_id == user_id)
+    else:
+        # Admin only for all drawings
+        if current_user.role != "admin":
+            raise HTTPException(status_code=403, detail="无权限查看所有绘图记录")
     
     total = q.count()
     drawings = q.order_by(Drawing.created_at.desc())\

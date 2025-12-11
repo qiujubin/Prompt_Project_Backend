@@ -22,12 +22,34 @@ def get_current_user(authorization: str = Header(None), db: Session = Depends(ge
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="未授权")
-    payload = decode_token(token)
-    username = payload.get("sub")
-    user = db.query(User).filter(User.username == username).first()
-    if not user:
+    try:
+        payload = decode_token(token)
+        username = payload.get("sub")
+        if not username:
+            raise HTTPException(status_code=401, detail="未授权")
+        user = db.query(User).filter(User.username == username).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="未授权")
+        return user
+    except Exception:
         raise HTTPException(status_code=401, detail="未授权")
-    return user
+
+def get_current_user_optional(authorization: str = Header(None), db: Session = Depends(get_db)):
+    """尝试获取当前用户，若未登录返回 None。"""
+    if not authorization:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer":
+        return None
+    try:
+        payload = decode_token(token)
+        username = payload.get("sub")
+        if not username:
+            return None
+        user = db.query(User).filter(User.username == username).first()
+        return user
+    except:
+        return None
 
 @router.get("/me")
 def me(user: User = Depends(get_current_user)):

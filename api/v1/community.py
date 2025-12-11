@@ -8,35 +8,18 @@ from models.drawing_interaction import DrawingLike, DrawingFavorite, DrawingComm
 from models.user import User
 from schemas.community import CommentCreate, CommentRead
 from schemas.drawing import DrawingRead
-from api.v1.users import get_current_user
+from api.v1.users import get_current_user, get_current_user_optional
 from core.security import decode_token
 from api.v1.credits import add_credits
 
 router = APIRouter(prefix="/community")
-
-def get_optional_current_user(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)) -> Optional[User]:
-    """尝试获取当前用户，如果未登录返回 None"""
-    if not authorization:
-        return None
-    try:
-        scheme, _, token = authorization.partition(" ")
-        if scheme.lower() != "bearer":
-            return None
-        payload = decode_token(token)
-        username = payload.get("sub")
-        if not username:
-            return None
-        user = db.query(User).filter(User.username == username).first()
-        return user
-    except:
-        return None
 
 @router.get("/feed", response_model=dict)
 def get_community_feed(
     page: int = 1, 
     size: int = 20, 
     sort_by: str = "newest", # newest, hot
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
     """

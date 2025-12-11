@@ -21,7 +21,7 @@ class Settings:
     ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
     ALGORITHM = os.getenv("ALGORITHM", "HS256")
     DB_URL = os.getenv("DB_URL", "postgresql+psycopg://postgres:123456@localhost/graduation")
-    CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+    CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
     WECHAT_APPID = os.getenv("WECHAT_APPID", "")
     WECHAT_SECRET = os.getenv("WECHAT_SECRET", "")
     # 验证码配置
@@ -35,3 +35,7 @@ class Settings:
     AI_API_URL = os.getenv("AI_API_URL", "https://api.openai.com/v1")
 
 settings = Settings()
+
+# Safety check for production
+if settings.SECRET_KEY == "dev-secret":
+    print("WARNING: You are using the default SECRET_KEY. Please change it in production.")
