@@ -10,6 +10,7 @@ class UserCreate(BaseModel):
 class UserRead(BaseModel):
     id: int
     username: str
+    nickname: Optional[str] = None
     email: Optional[str] = None
     role: Optional[str] = "user"
     avatar_url: Optional[str] = None

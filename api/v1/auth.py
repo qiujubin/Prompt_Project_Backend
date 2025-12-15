@@ -9,8 +9,17 @@ from database import get_db
 from models.user import User, SocialAccount
 from schemas.user import UserCreate, UserRead
 from services.code_service import code_service
+import random
 
 router = APIRouter(prefix="/auth")
+
+def generate_unique_nickname(db: Session) -> str:
+    """生成唯一的默认昵称 '用户_xxxx'"""
+    while True:
+        suffix = str(random.randint(1000, 9999))
+        nickname = f"用户_{suffix}"
+        if not db.query(User).filter(User.nickname == nickname).first():
+            return nickname
 
 @router.post("/register", response_model=UserRead)
 def register(payload: UserCreate, db: Session = Depends(get_db)):
@@ -18,7 +27,13 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     exists = db.query(User).filter(User.username == payload.username).first()
     if exists:
         raise HTTPException(status_code=400, detail="用户名已存在")
-    user = User(username=payload.username, hashed_password=get_password_hash(payload.password))
+    
+    nickname = generate_unique_nickname(db)
+    user = User(
+        username=payload.username, 
+        hashed_password=get_password_hash(payload.password),
+        nickname=nickname
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -54,7 +69,8 @@ def login_with_email_code(email: str, code: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="验证码错误或失效")
     user = db.query(User).filter(User.email == email).first()
     if not user:
-        user = User(username=email, email=email)
+        nickname = generate_unique_nickname(db)
+        user = User(username=email, email=email, nickname=nickname)
         db.add(user)
         db.commit()
         db.refresh(user)
@@ -68,7 +84,8 @@ def login_with_sms_code(phone: str, code: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="验证码错误或失效")
     user = db.query(User).filter(User.phone == phone).first()
     if not user:
-        user = User(username=phone, phone=phone)
+        nickname = generate_unique_nickname(db)
+        user = User(username=phone, phone=phone, nickname=nickname)
         db.add(user)
         db.commit()
         db.refresh(user)

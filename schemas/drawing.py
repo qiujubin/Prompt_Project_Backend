@@ -3,6 +3,7 @@ from typing import Optional
 from datetime import datetime
 
 class DrawingCreate(BaseModel):
+    title: Optional[str] = None
     prompt: str
     model_name: str
     negative_prompt: Optional[str] = None
@@ -15,6 +16,7 @@ class DrawingCreate(BaseModel):
 class DrawingRead(BaseModel):
     id: int
     user_id: int
+    title: Optional[str] = None
     prompt: str
     negative_prompt: Optional[str] = None
     model_name: str
@@ -38,12 +40,14 @@ class DrawingRead(BaseModel):
     
     # Creator info
     username: Optional[str] = None
+    nickname: Optional[str] = None
     avatar_url: Optional[str] = None
 
     class Config:
         from_attributes = True
 
 class DrawingUpdate(BaseModel):
+    title: Optional[str] = None
     prompt: Optional[str] = None
     negative_prompt: Optional[str] = None
     image_url: Optional[str] = None

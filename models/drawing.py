@@ -13,6 +13,7 @@ class Drawing(Base):
     __tablename__ = "drawings"
     id = Column(BigInteger, primary_key=True, index=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
+    title = Column(String(255), nullable=True)
     prompt = Column(Text, nullable=False)
     model_name = Column(String(128), nullable=False)
     image_url = Column(Text, nullable=True)

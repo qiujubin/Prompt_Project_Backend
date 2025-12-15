@@ -59,6 +59,12 @@ def get_community_feed(
     
     for d in drawings:
         d_data = DrawingRead.from_orm(d)
+        
+        # Populate creator info
+        if d.user:
+            d_data.username = d.user.username
+            d_data.nickname = d.user.nickname
+
         if user_id:
             d_data.is_liked = db.query(exists().where(DrawingLike.user_id == user_id, DrawingLike.drawing_id == d.id)).scalar()
             d_data.is_favorited = db.query(exists().where(DrawingFavorite.user_id == user_id, DrawingFavorite.drawing_id == d.id)).scalar()

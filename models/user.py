@@ -12,6 +12,7 @@ class User(Base):
     __tablename__ = "users"
     id = Column(BigInteger, primary_key=True, index=True)
     username = Column(String(64), unique=True, index=True, nullable=False)
+    nickname = Column(String(64), unique=True, index=True, nullable=True)
     email = Column(String(128), unique=True, index=True, nullable=True)
     hashed_password = Column(Text, nullable=True)
     avatar_url = Column(Text, nullable=True)

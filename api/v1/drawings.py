@@ -14,6 +14,7 @@ router = APIRouter(prefix="/drawings")
 
 class DrawingCreate(BaseModel):
     user_id: int
+    title: Optional[str] = None
     prompt: str
     negative_prompt: Optional[str] = None
     model_name: str
@@ -40,6 +41,7 @@ def create_drawing(drawing_in: DrawingCreate, db: Session = Depends(get_db), cur
     
     new_drawing = Drawing(
         user_id=current_user.id,
+        title=drawing_in.title,
         prompt=drawing_in.prompt,
         negative_prompt=drawing_in.negative_prompt,
         model_name=drawing_in.model_name,
@@ -101,6 +103,7 @@ def get_drawing_detail(drawing_id: int, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == drawing.user_id).first()
     if user:
         result.username = user.username
+        result.nickname = user.nickname
         result.avatar_url = user.avatar_url
         
     return {"code": 200, "msg": "OK", "data": result}
