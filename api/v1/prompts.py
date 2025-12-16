@@ -4,6 +4,7 @@
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db
@@ -12,6 +13,7 @@ from models.prompt_subcategory import PromptSubcategory
 from models.prompt_keyword import PromptKeyword
 from models.prompt_log import PromptLog
 from models.user import User
+from schemas.prompt import PromptKeywordCreate
 from api.v1.users import get_current_user
 
 router = APIRouter(prefix="/prompts")
@@ -85,11 +87,6 @@ def get_prompt_logs(
             
     return {"code": 200, "msg": "OK", "data": logs, "total": total}
 
-class PromptKeywordCreate(BaseModel):
-    user_id: int
-    small_category_id: int
-    word: str
-
 @router.post("/keywords")
 def create_keyword(keyword_in: PromptKeywordCreate, db: Session = Depends(get_db)):
     """
@@ -107,6 +104,7 @@ def create_keyword(keyword_in: PromptKeywordCreate, db: Session = Depends(get_db
 
     new_keyword = PromptKeyword(
         word=keyword_in.word,
+        display_name=keyword_in.display_name,
         small_category_id=keyword_in.small_category_id,
         created_by=keyword_in.user_id
     )
@@ -163,6 +161,23 @@ def get_keywords(subcategory_id: int, db: Session = Depends(get_db)):
     """获取指定小分类下的所有提示词。"""
     items = db.query(PromptKeyword).filter(PromptKeyword.small_category_id == subcategory_id).all()
     return {"code": 200, "msg": "OK", "data": items}
+
+@router.get("/search")
+def search_keywords(q: str, db: Session = Depends(get_db)):
+    """
+    Search for keywords by word or display_name.
+    """
+    if not q:
+        return {"code": 200, "msg": "OK", "data": []}
+    
+    keywords = db.query(PromptKeyword).filter(
+        or_(
+            PromptKeyword.word.ilike(f"%{q}%"),
+            PromptKeyword.display_name.ilike(f"%{q}%")
+        )
+    ).limit(20).all()
+    
+    return {"code": 200, "msg": "OK", "data": keywords}
 
 @router.get("/categories/{category_id}/tree")
 def get_category_tree(category_id: int, db: Session = Depends(get_db)):

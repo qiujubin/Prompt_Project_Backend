@@ -50,8 +50,9 @@ class PromptKeywordRead(BaseModel):
 
 class PromptKeywordCreate(BaseModel):
     word: str
-    small_category_id: Optional[int] = None
-    created_by: Optional[int] = None
+    display_name: Optional[str] = None
+    small_category_id: int
+    user_id: int
 
 class PromptKeywordUpdate(BaseModel):
     word: Optional[str] = None

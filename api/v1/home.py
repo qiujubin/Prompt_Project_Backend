@@ -87,6 +87,7 @@ def _categories(db: Session, user_id: int = None):
     kw_map = {}
     for k in keywords:
         kw_map.setdefault(k.small_category_id, []).append({
+            "id": k.id,
             "name": k.word,
             "label": k.display_name or k.word,
             "is_favorite": k.id in fav_keyword_ids
