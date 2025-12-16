@@ -1,16 +1,24 @@
 """首页与导航相关接口。
 
 提供分类树与动态菜单，兼容前端现有契约。"""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from core.security import create_access_token, decode_token
+from api.v1.users import get_current_user, get_current_user_optional
 from schemas.auth import LoginRequest, DropdownItem, DropdownResponse
 from sqlalchemy.orm import Session
 from database import get_db
 from models.prompt_category import PromptCategory
 from models.prompt_subcategory import PromptSubcategory
 from models.prompt_keyword import PromptKeyword
+from models.user_favorite import UserFavorite
+from models.user import User
+from pydantic import BaseModel
+from typing import Optional
 
 router = APIRouter(prefix="/home")
+
+class FavoritePromptRequest(BaseModel):
+    name: str
 
 DEFAULT_CATEGORY_TREE = [
     {
@@ -63,18 +71,25 @@ DEFAULT_CATEGORY_TREE = [
     }
 ]
 
-def _categories(db: Session):
+def _categories(db: Session, user_id: int = None):
     """从数据库聚合生成分类树结构。"""
     cats = db.query(PromptCategory).order_by(PromptCategory.sort_order).all()
     subs = db.query(PromptSubcategory).order_by(PromptSubcategory.sort_order).all()
     keywords = db.query(PromptKeyword).all() # 如果数据量大应该优化，但目前 seed 数据不多
     
+    # 获取用户收藏的提示词ID
+    fav_keyword_ids = set()
+    if user_id:
+        favs = db.query(UserFavorite.keyword_id).filter(UserFavorite.user_id == user_id).all()
+        fav_keyword_ids = {f[0] for f in favs}
+
     # 构建 Keyword Map: sub_id -> [keywords]
     kw_map = {}
     for k in keywords:
         kw_map.setdefault(k.small_category_id, []).append({
             "name": k.word,
-            "label": k.display_name or k.word
+            "label": k.display_name or k.word,
+            "is_favorite": k.id in fav_keyword_ids
         })
 
     # 构建 Subcategory Map: cat_id -> [subcategories]
@@ -110,9 +125,13 @@ def _dropdown(role):
     return items
 
 @router.get("/getPromptCatagory")
-def get_prompt_category(db: Session = Depends(get_db)):
+def get_prompt_category(
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
     """返回分类树结构：`{ code, msg, data: { promptCatagory: [...] } }`。"""
-    data = {"promptCatagory": _categories(db)}
+    user_id = current_user.id if current_user else None
+    data = {"promptCatagory": _categories(db, user_id)}
     return {"code": 200, "msg": "OK", "data": data}
 
 @router.post("/getDropdown")
@@ -142,3 +161,44 @@ def get_dropdown(payload: LoginRequest):
     items = _dropdown(role)
     res = DropdownResponse(role=role, token=token, dropdownList=items)
     return {"code": 200, "msg": "OK", "data": res.dict()}
+
+@router.post("/favoritePrompt")
+def favorite_prompt(
+    payload: FavoritePromptRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    收藏/取消收藏提示词 (通过提示词名称)
+    如果已收藏则取消收藏，如果未收藏则添加收藏。
+    """
+    # 1. 查找提示词是否存在
+    keyword = db.query(PromptKeyword).filter(PromptKeyword.word == payload.name).first()
+    if not keyword:
+        # 尝试查找 display_name 匹配的情况 (可选)
+        keyword = db.query(PromptKeyword).filter(PromptKeyword.display_name == payload.name).first()
+        
+    if not keyword:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Prompt '{payload.name}' not found"
+        )
+        
+    # 2. 查找是否已收藏
+    fav = db.query(UserFavorite).filter(
+        UserFavorite.user_id == current_user.id,
+        UserFavorite.keyword_id == keyword.id
+    ).first()
+    
+    if fav:
+        # 已收藏 -> 取消收藏
+        db.delete(fav)
+        db.commit()
+        return {"code": 200, "msg": "Unfavorited", "data": {"is_favorite": False}}
+    else:
+        # 未收藏 -> 添加收藏
+        new_fav = UserFavorite(user_id=current_user.id, keyword_id=keyword.id)
+        db.add(new_fav)
+        db.commit()
+        return {"code": 200, "msg": "Favorited", "data": {"is_favorite": True}}
+
