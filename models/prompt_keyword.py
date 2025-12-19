@@ -15,4 +15,5 @@ class PromptKeyword(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
     small_category_id = Column(BigInteger, ForeignKey("prompt_subcategories.id"), nullable=True)
     created_by = Column(BigInteger, ForeignKey("users.id"), nullable=True)
+    usage_count = Column(Integer, default=0, server_default="0")
 

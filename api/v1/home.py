@@ -10,6 +10,7 @@ from database import get_db
 from models.prompt_category import PromptCategory
 from models.prompt_subcategory import PromptSubcategory
 from models.prompt_keyword import PromptKeyword
+from models.user_prompt_keyword import UserPromptKeyword
 from models.user_favorite import UserFavorite
 from models.user import User
 from pydantic import BaseModel
@@ -79,9 +80,15 @@ def _categories(db: Session, user_id: int = None):
     
     # 获取用户收藏的提示词ID
     fav_keyword_ids = set()
+    user_usage_map = {}
     if user_id:
         favs = db.query(UserFavorite.keyword_id).filter(UserFavorite.user_id == user_id).all()
         fav_keyword_ids = {f[0] for f in favs}
+        
+        # 获取用户使用统计
+        user_usages = db.query(UserPromptKeyword).filter(UserPromptKeyword.user_id == user_id).all()
+        for uu in user_usages:
+            user_usage_map[uu.keyword_id] = uu.used_count
 
     # 构建 Keyword Map: sub_id -> [keywords]
     kw_map = {}
@@ -90,7 +97,9 @@ def _categories(db: Session, user_id: int = None):
             "id": k.id,
             "name": k.word,
             "label": k.display_name or k.word,
-            "is_favorite": k.id in fav_keyword_ids
+            "is_favorite": k.id in fav_keyword_ids,
+            "usage_count": k.usage_count,
+            "used_count": user_usage_map.get(k.id, 0)
         })
 
     # 构建 Subcategory Map: cat_id -> [subcategories]
@@ -191,15 +200,15 @@ def favorite_prompt(
         UserFavorite.keyword_id == keyword.id
     ).first()
     
+    # 3. 如果已收藏 -> 取消收藏
     if fav:
-        # 已收藏 -> 取消收藏
         db.delete(fav)
         db.commit()
-        return {"code": 200, "msg": "Unfavorited", "data": {"is_favorite": False}}
-    else:
-        # 未收藏 -> 添加收藏
-        new_fav = UserFavorite(user_id=current_user.id, keyword_id=keyword.id)
-        db.add(new_fav)
-        db.commit()
-        return {"code": 200, "msg": "Favorited", "data": {"is_favorite": True}}
+        return {"code": 200, "msg": "取消收藏成功", "data": {"is_favorite": False}}
+    
+    # 4. 如果未收藏 -> 添加收藏
+    new_fav = UserFavorite(user_id=current_user.id, keyword_id=keyword.id)
+    db.add(new_fav)
+    db.commit()
+    return {"code": 200, "msg": "添加收藏成功", "data": {"is_favorite": True}}
 

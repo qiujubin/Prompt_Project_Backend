@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, DateTime, ForeignKey
+from sqlalchemy import Column, BigInteger, DateTime, ForeignKey, Integer
 from sqlalchemy.sql import func
 from database import Base
 
@@ -12,4 +12,6 @@ class UserFavorite(Base):
     user_id = Column(BigInteger, ForeignKey("users.id"), primary_key=True)
     keyword_id = Column(BigInteger, ForeignKey("prompt_keywords.id"), primary_key=True)
     favorited_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True)
+    display_order = Column(Integer, default=0, nullable=True)
 

@@ -16,20 +16,51 @@ def list_favorites(user_id: int | None = None, db: Session = Depends(get_db)):
     if user_id:
         q = q.filter(UserFavorite.user_id == user_id)
     
+    # Order by display_order ascending, then by favorited_at descending (newest first for same order)
+    q = q.order_by(UserFavorite.display_order.asc(), UserFavorite.favorited_at.desc())
+    
     results = q.all()
+    
+    # 获取用户使用统计
+    user_usage_map = {}
+    if user_id:
+        user_usages = db.query(UserPromptKeyword).filter(UserPromptKeyword.user_id == user_id).all()
+        for uu in user_usages:
+            user_usage_map[uu.keyword_id] = uu.used_count
+            
     data = []
     for fav, keyword in results:
         data.append({
             "user_id": fav.user_id,
             "keyword_id": fav.keyword_id,
             "favorited_at": fav.favorited_at,
+            "display_order": fav.display_order,
             "keyword": {
                 "id": keyword.id,
+                "name": keyword.word,
+                "label": keyword.display_name or keyword.word,
                 "word": keyword.word,
-                "small_category_id": keyword.small_category_id
+                "small_category_id": keyword.small_category_id,
+                "usage_count": keyword.usage_count,
+                "used_count": user_usage_map.get(keyword.id, 0)
             }
         })
     return {"code": 200, "msg": "OK", "data": data}
+
+@fav_router.post("/reorder")
+def reorder_favorites(user_id: int, keyword_ids: list[int], db: Session = Depends(get_db)):
+    """批量更新收藏顺序。"""
+    # Verify user exists or matches current user (auth check should be done here in real app)
+    
+    # Update each favorite's order
+    for index, keyword_id in enumerate(keyword_ids):
+        db.query(UserFavorite).filter(
+            UserFavorite.user_id == user_id,
+            UserFavorite.keyword_id == keyword_id
+        ).update({"display_order": index})
+    
+    db.commit()
+    return {"code": 200, "msg": "排序更新成功", "data": True}
 
 @fav_router.post("/add")
 def add_favorite(user_id: int, keyword_id: int, db: Session = Depends(get_db)):

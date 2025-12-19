@@ -45,6 +45,7 @@ class PromptKeywordRead(BaseModel):
     word: str
     small_category_id: Optional[int] = None
     created_by: Optional[int] = None
+    usage_count: Optional[int] = 0
     class Config:
         from_attributes = True
 
@@ -52,7 +53,7 @@ class PromptKeywordCreate(BaseModel):
     word: str
     display_name: Optional[str] = None
     small_category_id: int
-    user_id: int
+    user_id: Optional[int] = None
 
 class PromptKeywordUpdate(BaseModel):
     word: Optional[str] = None

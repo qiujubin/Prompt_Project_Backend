@@ -4,17 +4,18 @@
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db
 from models.prompt_category import PromptCategory
 from models.prompt_subcategory import PromptSubcategory
 from models.prompt_keyword import PromptKeyword
+from models.user_prompt_keyword import UserPromptKeyword
 from models.prompt_log import PromptLog
 from models.user import User
 from schemas.prompt import PromptKeywordCreate
-from api.v1.users import get_current_user
+from api.v1.users import get_current_user, get_current_user_optional
 
 router = APIRouter(prefix="/prompts")
 
@@ -88,15 +89,14 @@ def get_prompt_logs(
     return {"code": 200, "msg": "OK", "data": logs, "total": total}
 
 @router.post("/keywords")
-def create_keyword(keyword_in: PromptKeywordCreate, db: Session = Depends(get_db)):
+def create_keyword(
+    keyword_in: PromptKeywordCreate, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """
     用户添加一个新的提示词在某个小分类上。
     """
-    # 验证用户
-    user = db.query(User).filter(User.id == keyword_in.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-
     # 验证小分类
     subcategory = db.query(PromptSubcategory).filter(PromptSubcategory.id == keyword_in.small_category_id).first()
     if not subcategory:
@@ -106,7 +106,8 @@ def create_keyword(keyword_in: PromptKeywordCreate, db: Session = Depends(get_db
         word=keyword_in.word,
         display_name=keyword_in.display_name,
         small_category_id=keyword_in.small_category_id,
-        created_by=keyword_in.user_id
+        created_by=current_user.id,
+        usage_count=1  # 新增关键词初始热度为1
     )
     db.add(new_keyword)
     db.commit()
@@ -143,6 +144,22 @@ def delete_keyword(keyword_id: int, user_id: int, db: Session = Depends(get_db))
     db.delete(item)
     db.commit()
     return {"code": 200, "msg": "删除成功", "data": True}
+
+@router.post("/keywords/{keyword_id}/increment_usage")
+def increment_keyword_usage(keyword_id: int, db: Session = Depends(get_db)):
+    """
+    增加提示词热度值。
+    当用户从选择区选择提示词时调用。
+    """
+    keyword = db.query(PromptKeyword).filter(PromptKeyword.id == keyword_id).first()
+    if not keyword:
+        raise HTTPException(status_code=404, detail="提示词不存在")
+    
+    keyword.usage_count = (keyword.usage_count or 0) + 1
+    db.commit()
+    db.refresh(keyword)
+    return {"code": 200, "msg": "热度更新成功", "data": keyword.usage_count}
+
 
 @router.get("/categories")
 def get_categories(db: Session = Depends(get_db)):
