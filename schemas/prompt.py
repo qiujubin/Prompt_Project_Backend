@@ -65,3 +65,14 @@ class PromptTreeItem(BaseModel):
     label: str
     children: List[dict] | None = None
 
+# Translation Schemas
+class TranslateItem(BaseModel):
+    word: str = ""
+    translation: str = ""
+
+class TranslateRequest(BaseModel):
+    items: List[TranslateItem]
+    engine: str = "baidu" # 'baidu' or 'deepseek'
+
+class TranslateResponse(BaseModel):
+    items: List[TranslateItem]

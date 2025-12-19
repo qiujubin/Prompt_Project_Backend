@@ -4,6 +4,10 @@
 验证码策略与跨域来源等。
 """
 import os
+from dotenv import load_dotenv
+
+# 加载 .env 文件
+load_dotenv()
 
 class Settings:
     """项目配置对象。
@@ -18,7 +22,7 @@ class Settings:
     - VERIFICATION_CODE_*: 验证码过期/重试/重发限制
     """
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret")
-    ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+    ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "43200"))
     ALGORITHM = os.getenv("ALGORITHM", "HS256")
     DB_URL = os.getenv("DB_URL", "postgresql+psycopg://postgres:123456@localhost/graduation")
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
@@ -33,6 +37,14 @@ class Settings:
     COMFYUI_HOST = os.getenv("COMFYUI_HOST", "127.0.0.1:8188")
     AI_API_KEY = os.getenv("AI_API_KEY", "")
     AI_API_URL = os.getenv("AI_API_URL", "https://api.openai.com/v1")
+
+    # DeepSeek Config
+    DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+    DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com")
+
+    # Baidu Translate Config
+    BAIDU_TRANS_APPID = os.getenv("BAIDU_TRANS_APPID", "")
+    BAIDU_TRANS_KEY = os.getenv("BAIDU_TRANS_KEY", "")
 
 settings = Settings()
 

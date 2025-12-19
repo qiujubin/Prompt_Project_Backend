@@ -14,10 +14,21 @@ from models.prompt_keyword import PromptKeyword
 from models.user_prompt_keyword import UserPromptKeyword
 from models.prompt_log import PromptLog
 from models.user import User
-from schemas.prompt import PromptKeywordCreate
+from schemas.prompt import PromptKeywordCreate, TranslateRequest, TranslateResponse
 from api.v1.users import get_current_user, get_current_user_optional
+from services.llm_service import translation_service
 
 router = APIRouter(prefix="/prompts")
+
+@router.post("/translate", response_model=TranslateResponse)
+async def translate_prompts_endpoint(request: TranslateRequest):
+    """
+    使用 LLM 自动翻译补全提示词
+    """
+    # 将 Pydantic model 转换为 dict 列表
+    items = [item.model_dump() for item in request.items]
+    translated = await translation_service.translate(items, engine=request.engine)
+    return {"items": translated}
 
 class PromptLogCreate(BaseModel):
     user_id: int
