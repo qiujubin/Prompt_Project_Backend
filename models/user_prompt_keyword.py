@@ -21,3 +21,7 @@ class UserPromptKeyword(Base):
     last_used_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     first_used_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
 
+    # 生成相关的时间记录
+    last_generated_at = Column(DateTime(timezone=True), nullable=True)
+    first_generated_at = Column(DateTime(timezone=True), nullable=True)
+

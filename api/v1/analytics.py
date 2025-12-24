@@ -12,6 +12,7 @@ from database import get_db
 from schemas.analytics import ChartData
 from models.prompt_log import PromptLog
 from models.prompt_keyword import PromptKeyword
+from models.user_prompt_keyword import UserPromptKeyword
 from models.drawing import Drawing
 from models.user import User
 from models.prompt_subcategory import PromptSubcategory
@@ -81,9 +82,10 @@ def get_user_stats(current_user: User = Depends(get_current_user), db: Session =
     4. 权重调整次数 (weight_adjusted)
     """
     # Base query for this user
-    base_query = db.query(PromptLog).filter(PromptLog.user_id == current_user.id)
-    
-    total_selected = base_query.count()
+    # 使用 UserPromptKeyword 表统计已选提示词（所有generated_count的总和）
+    total_selected = db.query(func.sum(UserPromptKeyword.generated_count)).filter(
+        UserPromptKeyword.user_id == current_user.id
+    ).scalar() or 0
     
     # Aggregate from CopyLog
     positive_count = db.query(func.sum(CopyLog.item_count)).filter(

@@ -72,15 +72,20 @@ def create_prompt_log(log_in: PromptLogCreate, db: Session = Depends(get_db)):
     ).first()
     
     if user_keyword:
-        user_keyword.generated_count += 1
+        # 生成图片时(PromptLog)，更新used字段
+        user_keyword.used_count += 1
         user_keyword.last_used_at = func.now()
+        if user_keyword.first_used_at is None:
+             user_keyword.first_used_at = func.now()
     else:
-        # 如果之前没点过也没用过，直接生成（虽然不太可能，但以防万一）
+        # 如果之前没点过也没用过，直接生成
         new_uk = UserPromptKeyword(
             user_id=log_in.user_id,
             keyword_id=log_in.prompt_id,
-            used_count=0, # 点击次数为0
-            generated_count=1 # 生成次数为1
+            used_count=1,
+            generated_count=0,
+            first_used_at=func.now(),
+            last_used_at=func.now()
         )
         db.add(new_uk)
 
@@ -204,13 +209,19 @@ def increment_keyword_usage(
         ).first()
         
         if user_keyword:
-            user_keyword.used_count += 1
-            user_keyword.last_used_at = func.now()
+            # 按照用户要求，选择(Selection)更新generated字段
+            user_keyword.generated_count += 1
+            user_keyword.last_generated_at = func.now()
+            if user_keyword.first_generated_at is None:
+                user_keyword.first_generated_at = func.now()
         else:
             new_uk = UserPromptKeyword(
                 user_id=current_user.id,
                 keyword_id=keyword_id,
-                used_count=1
+                used_count=0,
+                generated_count=1,
+                first_generated_at=func.now(),
+                last_generated_at=func.now()
             )
             db.add(new_uk)
             
