@@ -125,9 +125,9 @@ def _categories(db: Session, user_id: int = None):
 
 def _dropdown(role):
     items = [
-        DropdownItem(label="个人中心", path="/userCenter", name="userCenter", url="UserCenter"),
+        DropdownItem(label="个人中心", path="/user/center", name="userCenter", url="UserCenter"),
         DropdownItem(label="管理", path="/management", name="management", url="Management"),
-        DropdownItem(label="用户设置", path="/userSet", name="userSet", url="UserSet"),
+        DropdownItem(label="用户设置", path="/user/settings", name="userSet", url="UserSet"),
         DropdownItem(label="页面设置", path="/pageSet", name="pageSet", url="PageSet")
     ]
     if role == "tourist":

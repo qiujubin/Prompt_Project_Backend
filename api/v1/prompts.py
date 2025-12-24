@@ -43,6 +43,7 @@ def create_prompt_log(log_in: PromptLogCreate, db: Session = Depends(get_db)):
     """
     记录提示词使用日志。
     记录某人什么时候(自动生成)，在哪个画上，使用了什么提示词(这里指分类)，是否负面，权重是多少。
+    同时增加用户对该提示词的 generated_count (实际生成使用次数)。
     """
     # 简单验证用户
     user = db.query(User).filter(User.id == log_in.user_id).first()
@@ -53,6 +54,7 @@ def create_prompt_log(log_in: PromptLogCreate, db: Session = Depends(get_db)):
     if not prompt:
       raise HTTPException(status_code=404,detail="关键词不存在")
 
+    # 1. 创建详细日志
     new_log = PromptLog(
         user_id=log_in.user_id,
         prompt_id = log_in.prompt_id,
@@ -62,6 +64,26 @@ def create_prompt_log(log_in: PromptLogCreate, db: Session = Depends(get_db)):
         is_negative=log_in.is_negative
     )
     db.add(new_log)
+    
+    # 2. 更新 UserPromptKeyword 的 generated_count
+    user_keyword = db.query(UserPromptKeyword).filter(
+        UserPromptKeyword.user_id == log_in.user_id,
+        UserPromptKeyword.keyword_id == log_in.prompt_id
+    ).first()
+    
+    if user_keyword:
+        user_keyword.generated_count += 1
+        user_keyword.last_used_at = func.now()
+    else:
+        # 如果之前没点过也没用过，直接生成（虽然不太可能，但以防万一）
+        new_uk = UserPromptKeyword(
+            user_id=log_in.user_id,
+            keyword_id=log_in.prompt_id,
+            used_count=0, # 点击次数为0
+            generated_count=1 # 生成次数为1
+        )
+        db.add(new_uk)
+
     db.commit()
     db.refresh(new_log)
     
@@ -157,16 +179,41 @@ def delete_keyword(keyword_id: int, user_id: int, db: Session = Depends(get_db))
     return {"code": 200, "msg": "删除成功", "data": True}
 
 @router.post("/keywords/{keyword_id}/increment_usage")
-def increment_keyword_usage(keyword_id: int, db: Session = Depends(get_db)):
+def increment_keyword_usage(
+    keyword_id: int, 
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
     """
     增加提示词热度值。
     当用户从选择区选择提示词时调用。
+    同时如果用户已登录，更新用户个人使用习惯 (UserPromptKeyword)。
     """
     keyword = db.query(PromptKeyword).filter(PromptKeyword.id == keyword_id).first()
     if not keyword:
         raise HTTPException(status_code=404, detail="提示词不存在")
     
+    # 1. Update global usage (Heat)
     keyword.usage_count = (keyword.usage_count or 0) + 1
+    
+    # 2. Update personal usage (Common) if logged in
+    if current_user:
+        user_keyword = db.query(UserPromptKeyword).filter(
+            UserPromptKeyword.user_id == current_user.id,
+            UserPromptKeyword.keyword_id == keyword_id
+        ).first()
+        
+        if user_keyword:
+            user_keyword.used_count += 1
+            user_keyword.last_used_at = func.now()
+        else:
+            new_uk = UserPromptKeyword(
+                user_id=current_user.id,
+                keyword_id=keyword_id,
+                used_count=1
+            )
+            db.add(new_uk)
+            
     db.commit()
     db.refresh(keyword)
     return {"code": 200, "msg": "热度更新成功", "data": keyword.usage_count}

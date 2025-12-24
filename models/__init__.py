@@ -8,3 +8,5 @@ from .prompt_log import PromptLog
 from .user_prompt_keyword import UserPromptKeyword
 from .drawing_interaction import DrawingLike, DrawingFavorite, DrawingComment
 from .credit_log import CreditLog
+from .weight_log import WeightLog
+from .copy_log import CopyLog

@@ -5,6 +5,7 @@ from database import get_db
 from models.drawing import Drawing
 from models.drawing_interaction import DrawingComment
 from models.user import User
+from models.credit_log import CreditLog
 from api.v1.users import get_current_user
 from schemas.community import CommentRead
 from typing import List
@@ -16,6 +17,35 @@ def get_admin_user(current_user: User = Depends(get_current_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Permission denied")
     return current_user
+
+@router.post("/users/{user_id}/credits")
+def update_user_credits(
+    user_id: int,
+    amount: int = Query(..., description="Amount to add (positive) or remove (negative)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_admin_user)
+):
+    """
+    管理员手动调整用户积分
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Update user credits
+    user.credits = (user.credits or 0) + amount
+    
+    # Log the transaction
+    log = CreditLog(
+        user_id=user.id,
+        change_amount=amount,
+        reason="admin_adjustment",
+        description=f"Admin {current_user.username} adjusted credits by {amount}"
+    )
+    db.add(log)
+    db.commit()
+    
+    return {"code": 200, "msg": "Credits updated", "data": {"credits": user.credits}}
 
 @router.delete("/comments/{comment_id}")
 def delete_comment(
