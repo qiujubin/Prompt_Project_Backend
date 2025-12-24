@@ -97,9 +97,13 @@ def _categories(db: Session, user_id: int = None):
             "id": k.id,
             "name": k.word,
             "label": k.display_name or k.word,
+            "word": k.word, # Standardize
+            "display_name": k.display_name, # Standardize
             "is_favorite": k.id in fav_keyword_ids,
             "usage_count": k.usage_count,
-            "used_count": user_usage_map.get(k.id, 0)
+            "used_count": user_usage_map.get(k.id, 0),
+            "created_by": k.created_by, # Standardize
+            "user_id": k.created_by # Keep for backward compatibility if needed
         })
 
     # 构建 Subcategory Map: cat_id -> [subcategories]

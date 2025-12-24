@@ -14,7 +14,7 @@ from models.prompt_keyword import PromptKeyword
 from models.user_prompt_keyword import UserPromptKeyword
 from models.prompt_log import PromptLog
 from models.user import User
-from schemas.prompt import PromptKeywordCreate, TranslateRequest, TranslateResponse
+from schemas.prompt import PromptKeywordCreate, PromptKeywordUpdate, TranslateRequest, TranslateResponse
 from api.v1.users import get_current_user, get_current_user_optional
 from services.llm_service import translation_service
 
@@ -154,27 +154,24 @@ def create_keyword(
     return {"code": 200, "msg": "提示词创建成功", "data": new_keyword}
 
 @router.delete("/keywords/{keyword_id}")
-def delete_keyword(keyword_id: int, user_id: int, db: Session = Depends(get_db)):
+def delete_keyword(
+    keyword_id: int, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """
     删除提示词。
     - 用户只能删除自己创建的。
     - 管理员可以删除所有。
     """
-    # 获取操作用户
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-
     # 获取提示词
     item = db.query(PromptKeyword).filter(PromptKeyword.id == keyword_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="提示词不存在")
 
     # 权限检查
-    # 如果是管理员(role='admin')，或者 created_by == user_id，则允许删除
-    # 注意：根据 User 模型定义，role 默认为 'user'
-    is_admin = (user.role == 'admin')
-    is_owner = (item.created_by == user.id)
+    is_admin = (current_user.role == 'admin')
+    is_owner = (item.created_by == current_user.id)
 
     if not (is_admin or is_owner):
         raise HTTPException(status_code=403, detail="无权限删除此提示词")
@@ -182,6 +179,37 @@ def delete_keyword(keyword_id: int, user_id: int, db: Session = Depends(get_db))
     db.delete(item)
     db.commit()
     return {"code": 200, "msg": "删除成功", "data": True}
+
+@router.put("/keywords/{keyword_id}")
+def update_keyword(
+    keyword_id: int, 
+    keyword_in: PromptKeywordUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    修改提示词。
+    - 只能修改自己创建的。
+    - 管理员可以修改所有。
+    """
+    item = db.query(PromptKeyword).filter(PromptKeyword.id == keyword_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="提示词不存在")
+        
+    is_admin = (current_user.role == 'admin')
+    is_owner = (item.created_by == current_user.id)
+    
+    if not (is_admin or is_owner):
+        raise HTTPException(status_code=403, detail="无权限修改此提示词")
+        
+    if keyword_in.word is not None:
+        item.word = keyword_in.word
+    if keyword_in.display_name is not None:
+        item.display_name = keyword_in.display_name
+        
+    db.commit()
+    db.refresh(item)
+    return {"code": 200, "msg": "修改成功", "data": item}
 
 @router.post("/keywords/{keyword_id}/increment_usage")
 def increment_keyword_usage(
@@ -307,6 +335,9 @@ def get_category_tree(category_id: int, db: Session = Depends(get_db)):
         keywords_map[sid].append({
             "id": kw.id,
             "word": kw.word,
+            "display_name": kw.display_name,
+            "name": kw.word,   # Frontend compatibility
+            "label": kw.display_name, # Frontend compatibility
             "created_by": kw.created_by
         })
 

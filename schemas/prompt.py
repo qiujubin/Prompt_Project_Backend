@@ -57,6 +57,7 @@ class PromptKeywordCreate(BaseModel):
 
 class PromptKeywordUpdate(BaseModel):
     word: Optional[str] = None
+    display_name: Optional[str] = None
     small_category_id: Optional[int] = None
     created_by: Optional[int] = None
 
