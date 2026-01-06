@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
 from services.ai import get_ai_generator
@@ -12,17 +12,25 @@ from api.v1.credits import deduct_credits, add_credits
 router = APIRouter(prefix="/generation")
 
 class GenerateRequest(BaseModel):
-    prompt: str
-    negative_prompt: Optional[str] = ""
-    backend: str = "comfyui"  # 'comfyui' or 'external'
-    width: Optional[int] = 512
-    height: Optional[int] = 512
-    seed: Optional[int] = None
-    model_name: Optional[str] = None
-    # 新增：自定义配置参数
-    comfyui_host: Optional[str] = None  # 用户自定义的 ComfyUI 地址
-    api_key: Optional[str] = None       # 用户自定义的 External API Key
-    api_url: Optional[str] = None       # 用户自定义的 External API URL
+    """图像生成请求模型
+
+    Requirements: 4.2 - 生成任务包含所有必要参数
+    """
+    prompt: str = Field(..., description="正面提示词")
+    negative_prompt: Optional[str] = Field("", description="负面提示词")
+    backend: str = Field("comfyui", description="后端类型: 'comfyui' 或 'external'")
+    width: Optional[int] = Field(512, ge=64, le=2048, description="图像宽度")
+    height: Optional[int] = Field(512, ge=64, le=2048, description="图像高度")
+    seed: Optional[int] = Field(-1, description="随机种子，-1 表示随机")
+    model_name: Optional[str] = Field(None, description="模型名称")
+    cfg: Optional[float] = Field(7.0, ge=1.0, le=30.0, description="CFG Scale")
+    steps: Optional[int] = Field(20, ge=1, le=150, description="采样步数")
+    sampler: Optional[str] = Field("euler", description="采样器名称")
+    scheduler: Optional[str] = Field("normal", description="调度器名称")
+    # 自定义配置参数
+    comfyui_host: Optional[str] = Field(None, description="用户自定义的 ComfyUI 地址")
+    api_key: Optional[str] = Field(None, description="用户自定义的 External API Key")
+    api_url: Optional[str] = Field(None, description="用户自定义的 External API URL")
 
 @router.post("/draw")
 async def generate_image(
@@ -30,48 +38,51 @@ async def generate_image(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """触发 AI 绘图任务。需消耗积分。"""
+    """触发 AI 绘图任务。需消耗积分。
+
+    Requirements: 4.1, 4.2 - 创建并发送包含所有参数的生成任务
+    """
     try:
         # 扣除积分 logic
         # 如果用户使用了自定义的 ComfyUI 地址或 API Key，也许可以不扣分？
         # 暂时策略：统一扣除 2 积分
         cost = 2
-        
+
         # 特殊情况：如果用户完全使用自定义后端资源（如本地ComfyUI），可以免费
         # if req.comfyui_host or (req.backend == 'external' and req.api_key):
         #     cost = 0
-            
+
         if cost > 0:
             try:
                 deduct_credits(current_user.id, cost, "generation_cost", "AI 绘图消耗", db)
             except ValueError as e:
                 raise HTTPException(status_code=402, detail=str(e)) # 402 Payment Required
-        
+
         generator = get_ai_generator(req.backend)
-        
-        # 注入自定义配置
-        config_overrides = {}
-        if req.comfyui_host:
-            config_overrides['server_address'] = req.comfyui_host
-        if req.api_key:
-            config_overrides['api_key'] = req.api_key
-        if req.api_url:
-            config_overrides['api_url'] = req.api_url
-            
+
+        # 构建生成参数
         params = {
             "width": req.width,
             "height": req.height,
-            "seed": req.seed,
+            "seed": req.seed if req.seed is not None else -1,
             "model_name": req.model_name,
-            **config_overrides  # 将配置也传入 params，或者修改 generator 接口
+            "cfg": req.cfg,
+            "steps": req.steps,
+            "sampler": req.sampler,
+            "scheduler": req.scheduler,
         }
-        
-        # 注意：为了支持 config_overrides，我们需要修改 generator 的 generate_image 接口或者在调用前 configure
-        # 这里我们选择将配置放入 params 中，并在 generator 内部处理
-        
+
+        # 注入自定义配置
+        if req.comfyui_host:
+            params['server_address'] = req.comfyui_host
+        if req.api_key:
+            params['api_key'] = req.api_key
+        if req.api_url:
+            params['api_url'] = req.api_url
+
         try:
             result = await generator.generate_image(req.prompt, req.negative_prompt, params)
-            
+
             # 如果是异步任务（queued），保存初始记录到数据库
             if result.get("status") == "queued":
                 prompt_id = result.get("prompt_id")
@@ -90,7 +101,7 @@ async def generate_image(
                     )
                     db.add(new_drawing)
                     db.commit()
-            
+
             return {"code": 200, "msg": "OK", "data": result}
         except Exception as gen_err:
             # 生成失败，退还积分
@@ -99,19 +110,34 @@ async def generate_image(
             raise gen_err
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail={"message": str(e), "error_code": "VALIDATION_ERROR"})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # 提供更详细的错误信息
+        error_msg = str(e)
+        error_detail = {
+            "message": error_msg,
+            "error_code": "INTERNAL_ERROR"
+        }
+
+        # 检测特定错误类型
+        if "connection" in error_msg.lower() or "connect" in error_msg.lower():
+            error_detail["error_code"] = "CONNECTION_ERROR"
+        elif "timeout" in error_msg.lower():
+            error_detail["error_code"] = "TIMEOUT_ERROR"
+        elif "memory" in error_msg.lower() or "cuda" in error_msg.lower():
+            error_detail["error_code"] = "OUT_OF_MEMORY"
+
+        raise HTTPException(status_code=500, detail=error_detail)
 
 @router.get("/status/{backend}/{task_id}")
 async def check_generation_status(
-    backend: str, 
-    task_id: str, 
+    backend: str,
+    task_id: str,
     comfyui_host: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """检查绘图任务状态（针对异步后端如 ComfyUI）。
-    
+
     Args:
         backend: 后端类型 (comfyui/external)
         task_id: 任务 ID (prompt_id)
@@ -122,9 +148,9 @@ async def check_generation_status(
         params = {}
         if comfyui_host:
             params['server_address'] = comfyui_host
-            
+
         result = await generator.check_status(task_id, params=params)
-        
+
         # 如果任务完成，更新数据库状态
         if result.get("status") == "completed":
             drawing = db.query(Drawing).filter(Drawing.prompt_id == task_id).first()
@@ -137,8 +163,95 @@ async def check_generation_status(
                         # 暂时只取第一张
                         drawing.image_url = images[0]
                     db.commit()
-        
+
         return {"code": 200, "msg": "OK", "data": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/cancel/{backend}/{task_id}")
+async def cancel_generation(
+    backend: str,
+    task_id: str,
+    comfyui_host: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """取消正在进行的生成任务。
+
+    Args:
+        backend: 后端类型 (comfyui/external)
+        task_id: 任务 ID (prompt_id)
+        comfyui_host: 可选，用户自定义的 ComfyUI 地址
+
+    Requirements: 4.6 - 支持取消正在进行的生成任务
+    """
+    try:
+        generator = get_ai_generator(backend)
+
+        # 检查任务是否属于当前用户
+        drawing = db.query(Drawing).filter(
+            Drawing.prompt_id == task_id,
+            Drawing.user_id == current_user.id
+        ).first()
+
+        if not drawing:
+            raise HTTPException(status_code=404, detail="任务不存在或无权限取消")
+
+        # 只有在队列中或正在生成的任务才能取消
+        if drawing.status not in ["queued", "generating", "processing"]:
+            raise HTTPException(status_code=400, detail="任务已完成或已取消，无法再次取消")
+
+        # 调用取消方法
+        if hasattr(generator, 'cancel_task'):
+            params = {}
+            if comfyui_host:
+                params['server_address'] = comfyui_host
+            result = await generator.cancel_task(task_id, server_address=comfyui_host)
+        else:
+            result = {"status": "cancelled", "message": "Task marked as cancelled"}
+
+        # 更新数据库状态
+        drawing.status = "cancelled"
+        db.commit()
+
+        # 退还积分
+        add_credits(current_user.id, 2, "refund", "取消生成退款", db)
+
+        return {"code": 200, "msg": "OK", "data": result}
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/queue/{backend}")
+async def get_queue_status(
+    backend: str,
+    comfyui_host: Optional[str] = None
+):
+    """获取生成队列状态。
+
+    Args:
+        backend: 后端类型 (comfyui/external)
+        comfyui_host: 可选，用户自定义的 ComfyUI 地址
+
+    Requirements: 4.4 - 显示生成进度和状态更新
+    """
+    try:
+        generator = get_ai_generator(backend)
+
+        if hasattr(generator, 'get_queue'):
+            result = await generator.get_queue(server_address=comfyui_host)
+            return {"code": 200, "msg": "OK", "data": result}
+        else:
+            return {"code": 200, "msg": "OK", "data": {"queue_running": [], "queue_pending": []}}
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

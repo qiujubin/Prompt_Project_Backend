@@ -26,7 +26,7 @@ class Drawing(Base):
     ai_response_time_ms = Column(Integer, nullable=True)
     prompt_id = Column(String(64), nullable=True, index=True)  # 关联异步任务ID
     is_public = Column(Boolean, nullable=True, default=False)
-    
+
     # 社区互动统计字段
     view_count = Column(Integer, default=0, server_default=text("0"))
     like_count = Column(Integer, default=0, server_default=text("0"))
@@ -35,3 +35,6 @@ class Drawing(Base):
 
     user = relationship("User", back_populates="drawings")
     comments = relationship("DrawingComment", back_populates="drawing", cascade="all, delete-orphan")
+    content_tags = relationship("ContentTag", back_populates="content")
+    interactions = relationship("UserInteraction", back_populates="content")
+    features = relationship("ContentFeature", back_populates="content", uselist=False)

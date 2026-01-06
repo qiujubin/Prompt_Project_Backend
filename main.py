@@ -20,6 +20,7 @@ from api.v1.community import router as community_router
 from api.v1.admin_community import router as admin_community_router
 from api.v1.user_collections import router as user_collections_router
 from api.v1.credits import router as credits_router
+from api.v1.content_discovery import router as content_discovery_router
 from fastapi.staticfiles import StaticFiles
 import os
 
@@ -54,5 +55,6 @@ app.include_router(fav_router, prefix="/api")
 app.include_router(upk_router, prefix="/api")
 app.include_router(generation_router, prefix="/api")
 app.include_router(community_router, prefix="/api")
+app.include_router(content_discovery_router, prefix="/api/v1/content-discovery")
 
 app.add_middleware(MetricsMiddleware)

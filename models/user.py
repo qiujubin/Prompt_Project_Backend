@@ -26,10 +26,13 @@ class User(Base):
     last_login_at = Column(DateTime(timezone=True), nullable=True)
     source = Column(String(64), nullable=True)
     credits = Column(BigInteger, default=100, server_default=text("100")) # 初始积分
-    
+
     drawings = relationship("Drawing", back_populates="user")
     social_accounts = relationship("SocialAccount", back_populates="user")
     credit_logs = relationship("CreditLog", back_populates="user")
+    preferences = relationship("UserPreference", back_populates="user")
+    interactions = relationship("UserInteraction", back_populates="user")
+    search_logs = relationship("SearchLog", back_populates="user")
 
 class SocialAccount(Base):
     """社交账号绑定模型。
