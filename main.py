@@ -6,6 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
 from database import Base, engine
+# 导入所有模型以确保数据库表自动创建
+import models  # noqa: F401
 from api.v1.auth import router as auth_router
 from api.v1.users import router as users_router
 from api.v1.drawings import router as drawings_router
@@ -21,6 +23,7 @@ from api.v1.admin_community import router as admin_community_router
 from api.v1.user_collections import router as user_collections_router
 from api.v1.credits import router as credits_router
 from api.v1.content_discovery import router as content_discovery_router
+from api.v1.presets import router as presets_router
 from fastapi.staticfiles import StaticFiles
 import os
 
@@ -56,5 +59,6 @@ app.include_router(upk_router, prefix="/api")
 app.include_router(generation_router, prefix="/api")
 app.include_router(community_router, prefix="/api")
 app.include_router(content_discovery_router, prefix="/api/v1/content-discovery")
+app.include_router(presets_router, prefix="/api")
 
 app.add_middleware(MetricsMiddleware)

@@ -13,3 +13,7 @@ from .copy_log import CopyLog
 from .tag import Tag, ContentTag
 from .user_preference import UserPreference, UserInteraction
 from .search_log import SearchLog, ContentFeature
+from .prompt_preset import PromptPreset
+from .preset_item import PresetItem
+from .user_preset_favorite import UserPresetFavorite
+from .user_preset_usage import UserPresetUsage
