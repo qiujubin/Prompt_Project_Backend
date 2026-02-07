@@ -256,3 +256,159 @@ async def get_queue_status(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/models/{backend}")
+async def get_available_models(
+    backend: str,
+    comfyui_host: Optional[str] = None
+):
+    """获取可用的模型列表。
+
+    Args:
+        backend: 后端类型 (comfyui/external)
+        comfyui_host: 可选，用户自定义的 ComfyUI 地址
+
+    Returns:
+        可用模型列表，包括 checkpoints、VAE、samplers 等
+    """
+    try:
+        if backend != "comfyui":
+            return {"code": 200, "msg": "OK", "data": {"checkpoints": []}}
+
+        # 使用 ComfyUI 客户端获取模型信息
+        from services.comfyui.client import ComfyUIClient
+        from core.comfyui_config import get_comfyui_settings
+        import httpx
+
+        settings = get_comfyui_settings()
+
+        # 确定使用的地址
+        if comfyui_host:
+            # 用户自定义地址，直接使用
+            target_url = f"http://{comfyui_host}"
+        else:
+            # 使用配置的地址
+            target_url = settings.base_url
+
+        # 获取模型信息
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(f"{target_url}/object_info")
+            resp.raise_for_status()
+            object_info = resp.json()
+
+        # 解析模型信息
+        models = {}
+
+        # Checkpoints
+        if "CheckpointLoaderSimple" in object_info:
+            checkpoint_info = object_info["CheckpointLoaderSimple"]
+            if "input" in checkpoint_info and "required" in checkpoint_info["input"]:
+                ckpt_name = checkpoint_info["input"]["required"].get("ckpt_name")
+                if ckpt_name and isinstance(ckpt_name, list) and len(ckpt_name) > 0:
+                    models["checkpoints"] = ckpt_name[0] if isinstance(ckpt_name[0], list) else []
+
+        return {"code": 200, "msg": "OK", "data": models}
+
+    except httpx.ConnectError as e:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": f"无法连接到 ComfyUI 服务 ({target_url if 'target_url' in locals() else 'unknown'})。请检查 ComfyUI 是否正在运行。",
+                "error_code": "CONNECTION_ERROR"
+            }
+        )
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=e.response.status_code,
+            detail={
+                "message": f"ComfyUI 返回错误: {e.response.status_code}",
+                "error_code": "HTTP_ERROR"
+            }
+        )
+    except Exception as e:
+        error_msg = str(e)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": f"获取模型列表失败: {error_msg}",
+                "error_code": "INTERNAL_ERROR"
+            }
+        )
+
+
+@router.get("/comfyui/info")
+async def get_comfyui_info(
+    comfyui_host: Optional[str] = None
+):
+    """获取 ComfyUI 服务器信息和配置。
+
+    Args:
+        comfyui_host: 可选，用户自定义的 ComfyUI 地址
+
+    Returns:
+        ComfyUI 服务器信息，包括系统状态、模型路径等
+    """
+    try:
+        from core.comfyui_config import get_comfyui_settings
+        import httpx
+
+        settings = get_comfyui_settings()
+
+        # 确定使用的地址
+        if comfyui_host:
+            # 用户自定义地址，直接使用
+            target_url = f"http://{comfyui_host}"
+        else:
+            # 使用配置的地址
+            target_url = settings.base_url
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # 获取系统状态
+            system_resp = await client.get(f"{target_url}/system_stats")
+            system_resp.raise_for_status()
+            system_stats = system_resp.json()
+
+            # 获取对象信息（包含模型路径信息）
+            object_resp = await client.get(f"{target_url}/object_info")
+            object_resp.raise_for_status()
+            object_info = object_resp.json()
+
+            # 提取模型数量
+            model_counts = {}
+            if "CheckpointLoaderSimple" in object_info:
+                checkpoint_info = object_info["CheckpointLoaderSimple"]
+                if "input" in checkpoint_info and "required" in checkpoint_info["input"]:
+                    ckpt_name = checkpoint_info["input"]["required"].get("ckpt_name")
+                    if ckpt_name and isinstance(ckpt_name, list) and len(ckpt_name) > 0:
+                        checkpoints = ckpt_name[0] if isinstance(ckpt_name[0], list) else []
+                        model_counts["checkpoints"] = len(checkpoints)
+
+            return {
+                "code": 200,
+                "msg": "OK",
+                "data": {
+                    "host": target_url,
+                    "system_stats": system_stats,
+                    "model_counts": model_counts,
+                    "status": "connected"
+                }
+            }
+
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": f"无法连接到 ComfyUI 服务 ({target_url if 'target_url' in locals() else 'unknown'})。请检查 ComfyUI 是否正在运行。",
+                "error_code": "CONNECTION_ERROR"
+            }
+        )
+    except Exception as e:
+        error_msg = str(e)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": f"获取 ComfyUI 信息失败: {error_msg}",
+                "error_code": "INTERNAL_ERROR"
+            }
+        )

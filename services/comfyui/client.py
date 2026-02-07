@@ -104,6 +104,9 @@ class ComfyUIClient:
                 "client_id": client_id
             }
 
+            # 记录发送的工作流以便调试
+            logger.debug(f"Submitting workflow: {json.dumps(workflow, indent=2)}")
+
             response = await self.client.post("/prompt", json=payload)
             response.raise_for_status()
 
@@ -125,12 +128,25 @@ class ComfyUIClient:
         except httpx.HTTPStatusError as e:
             error_msg = f"HTTP {e.response.status_code}: {e.response.text}"
             logger.error(f"Failed to submit prompt: {error_msg}")
-            return {
-                "success": False,
-                "error": error_msg
-            }
+            logger.error(f"Workflow that caused error: {json.dumps(workflow, indent=2)}")
+
+            # 尝试解析 ComfyUI 的错误响应
+            try:
+                error_detail = e.response.json()
+                logger.error(f"ComfyUI error detail: {json.dumps(error_detail, indent=2)}")
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "detail": error_detail
+                }
+            except:
+                return {
+                    "success": False,
+                    "error": error_msg
+                }
         except Exception as e:
             logger.error(f"Failed to submit prompt: {e}")
+            logger.error(f"Workflow that caused error: {json.dumps(workflow, indent=2)}")
             return {
                 "success": False,
                 "error": str(e)

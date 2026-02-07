@@ -309,12 +309,46 @@ class ComfyUIGenerator(AIGeneratorBase):
 
         width = params.get("width", 512)
         height = params.get("height", 512)
-        model_name = params.get("model_name", "v1-5-pruned-emaonly.ckpt")
+        model_name = params.get("model_name")
         cfg = params.get("cfg", params.get("cfg_scale", 7.0))
         steps = params.get("steps", 20)
         sampler_name = params.get("sampler", params.get("sampler_name", "euler"))
         scheduler = params.get("scheduler", "normal")
         server_address = params.get("server_address")
+
+        # 如果没有指定模型，尝试获取第一个可用模型
+        if not model_name:
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    addr = server_address or self.server_address
+                    resp = await client.get(f"http://{addr}/object_info")
+                    resp.raise_for_status()
+                    object_info = resp.json()
+
+                    # 尝试获取第一个可用的 checkpoint
+                    if "CheckpointLoaderSimple" in object_info:
+                        checkpoint_info = object_info["CheckpointLoaderSimple"]
+                        if "input" in checkpoint_info and "required" in checkpoint_info["input"]:
+                            ckpt_name = checkpoint_info["input"]["required"].get("ckpt_name")
+                            if ckpt_name and isinstance(ckpt_name, list) and len(ckpt_name) > 0:
+                                checkpoints = ckpt_name[0] if isinstance(ckpt_name[0], list) else []
+                                if checkpoints:
+                                    model_name = checkpoints[0]
+                                    logger.info(f"No model specified, using first available: {model_name}")
+
+                if not model_name:
+                    return {
+                        "status": "error",
+                        "msg": "未指定模型且无法获取可用模型列表。请在 ComfyUI 的 models/checkpoints 目录中添加模型文件。",
+                        "error_code": "NO_MODELS_AVAILABLE"
+                    }
+            except Exception as e:
+                logger.error(f"Failed to fetch available models: {e}")
+                return {
+                    "status": "error",
+                    "msg": f"无法获取可用模型列表: {str(e)}。请确保 ComfyUI 正在运行并且 models/checkpoints 目录中有模型文件。",
+                    "error_code": "MODEL_FETCH_FAILED"
+                }
 
         # 构建工作流
         workflow = self._get_default_workflow(
@@ -331,13 +365,46 @@ class ComfyUIGenerator(AIGeneratorBase):
         )
 
         try:
+            logger.info(f"Submitting generation request - Model: {model_name}, Size: {width}x{height}, Steps: {steps}")
             resp = await self.queue_prompt(workflow, server_address=server_address)
             prompt_id = resp.get("prompt_id")
 
             if not prompt_id:
-                error_msg = resp.get("error", {}).get("message", "Failed to queue prompt")
-                return {"status": "error", "msg": error_msg}
+                error_msg = resp.get("error", "Failed to queue prompt")
+                error_detail = resp.get("detail", {})
 
+                # 提取更详细的错误信息
+                if isinstance(error_detail, dict):
+                    if "error" in error_detail:
+                        error_info = error_detail["error"]
+                        if isinstance(error_info, dict):
+                            # ComfyUI 返回的详细错误
+                            error_type = error_info.get("type", "unknown")
+                            error_message = error_info.get("message", str(error_msg))
+                            error_details = error_info.get("details", "")
+
+                            logger.error(f"ComfyUI Error - Type: {error_type}, Message: {error_message}, Details: {error_details}")
+
+                            # 根据错误类型提供友好提示
+                            if "not found" in error_message.lower() or "not found" in error_details.lower():
+                                if "model" in error_message.lower() or "checkpoint" in error_message.lower():
+                                    return {
+                                        "status": "error",
+                                        "msg": f"模型文件 '{model_name}' 不存在。请检查 ComfyUI 的 models/checkpoints 目录，或在前端选择其他可用模型。",
+                                        "error_code": "MODEL_NOT_FOUND",
+                                        "detail": error_details
+                                    }
+
+                            return {
+                                "status": "error",
+                                "msg": f"ComfyUI 错误: {error_message}",
+                                "error_code": error_type.upper(),
+                                "detail": error_details
+                            }
+
+                return {"status": "error", "msg": str(error_msg), "error_code": "QUEUE_FAILED"}
+
+            logger.info(f"Successfully queued prompt with ID: {prompt_id}")
             return {
                 "status": "queued",
                 "prompt_id": prompt_id,
