@@ -496,6 +496,35 @@ class ComfyUIGenerator(AIGeneratorBase):
             running_queue = queue_data.get("queue_running", [])
             for item in running_queue:
                 if len(item) > 1 and item[1] == prompt_id:
+                    # 尝试获取进度信息
+                    try:
+                        async with httpx.AsyncClient(timeout=10.0) as client:
+                            # ComfyUI 提供了一个 /prompt 端点来获取当前执行的进度
+                            # 但这个端点可能不是所有版本都有，所以我们用 try-except 包裹
+                            progress_resp = await client.get(f"http://{addr}/prompt")
+                            if progress_resp.status_code == 200:
+                                prompt_data = progress_resp.json()
+                                # 查找当前 prompt_id 的进度
+                                if prompt_id in prompt_data:
+                                    exec_info = prompt_data[prompt_id]
+                                    # 提取进度信息
+                                    if 'progress' in exec_info:
+                                        progress = exec_info['progress']
+                                        return {
+                                            "status": "generating",
+                                            "prompt_id": prompt_id,
+                                            "queue_position": 0,
+                                            "progress": {
+                                                "current": progress.get('value', 0),
+                                                "total": progress.get('max', 0),
+                                                "percentage": int((progress.get('value', 0) / progress.get('max', 1)) * 100) if progress.get('max', 0) > 0 else 0
+                                            },
+                                            "message": "正在生成中..."
+                                        }
+                    except Exception as e:
+                        logger.debug(f"Could not fetch progress info: {e}")
+
+                    # 如果无法获取详细进度，返回基本状态
                     return {
                         "status": "generating",
                         "prompt_id": prompt_id,
