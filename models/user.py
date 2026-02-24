@@ -26,6 +26,7 @@ class User(Base):
     last_login_at = Column(DateTime(timezone=True), nullable=True)
     source = Column(String(64), nullable=True)
     credits = Column(BigInteger, default=100, server_default=text("100")) # 初始积分
+    storage_used = Column(BigInteger, default=0, server_default=text("0"))  # 已使用存储空间（字节）
 
     drawings = relationship("Drawing", back_populates="user")
     social_accounts = relationship("SocialAccount", back_populates="user")

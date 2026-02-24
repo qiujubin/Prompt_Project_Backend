@@ -33,6 +33,12 @@ class Drawing(Base):
     favorite_count = Column(Integer, default=0, server_default=text("0"))
     comment_count = Column(Integer, default=0, server_default=text("0"))
 
+    # COS 存储相关字段
+    cos_key = Column(String(512), nullable=True, index=True)  # COS 对象键
+    thumbnail_url = Column(Text, nullable=True)  # 缩略图 URL
+    thumbnail_key = Column(String(512), nullable=True)  # 缩略图对象键
+    file_size = Column(BigInteger, nullable=True)  # 文件大小（字节）
+
     user = relationship("User", back_populates="drawings")
     comments = relationship("DrawingComment", back_populates="drawing", cascade="all, delete-orphan")
     content_tags = relationship("ContentTag", back_populates="content")

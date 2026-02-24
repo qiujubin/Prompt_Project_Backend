@@ -8,7 +8,13 @@ from database import get_db
 from models.user import User
 from models.drawing import Drawing
 from api.v1.credits import deduct_credits, add_credits
+from services.cos import COSStorageService, ImageProcessor, StorageManager
+from core.logger import get_logger
+import os
+import tempfile
+from datetime import datetime
 
+logger = get_logger(__name__)
 router = APIRouter(prefix="/generation")
 
 class GenerateRequest(BaseModel):
@@ -144,6 +150,25 @@ async def check_generation_status(
         comfyui_host: 可选，用户自定义的 ComfyUI 地址
     """
     try:
+        # 首先检查数据库中的任务状态
+        drawing = db.query(Drawing).filter(Drawing.prompt_id == task_id).first()
+
+        # 如果数据库中已经标记为完成，直接返回数据库结果，避免重复查询 ComfyUI
+        if drawing and drawing.status == "finish":
+            logger.debug(f"Drawing {drawing.id} already finished, returning from database cache")
+            return {
+                "code": 200,
+                "msg": "OK",
+                "data": {
+                    "status": "completed",
+                    "images": [drawing.image_url] if drawing.image_url else [],
+                    "thumbnail_url": drawing.thumbnail_url,
+                    "drawing_id": drawing.id,
+                    "prompt_id": task_id
+                }
+            }
+
+        # 否则，查询 ComfyUI 获取最新状态
         generator = get_ai_generator(backend)
         params = {}
         if comfyui_host:
@@ -151,24 +176,124 @@ async def check_generation_status(
 
         result = await generator.check_status(task_id, params=params)
 
-        # 如果任务完成，更新数据库状态
+        # 如果任务完成，更新数据库状态并上传到 COS
         if result.get("status") == "completed":
-            drawing = db.query(Drawing).filter(Drawing.prompt_id == task_id).first()
-            if drawing:
-                # 只有当状态不是 finish 时才更新，避免重复写入
-                if drawing.status != "finish":
+            if drawing and drawing.status != "finish":
+                images = result.get("images", [])
+                if images:
+                    # 获取第一张图片 URL
+                    image_url = images[0]
+                    drawing.image_url = image_url
+
+                    # 尝试上传到 COS
+                    try:
+                        await upload_image_to_cos(drawing, image_url, db)
+                        logger.info(f"Successfully uploaded drawing {drawing.id} to COS")
+                    except Exception as e:
+                        logger.error(f"Failed to upload to COS, but generation succeeded: {e}")
+                        # COS 上传失败不影响生成结果
+
                     drawing.status = "finish"
-                    images = result.get("images", [])
-                    if images:
-                        # 暂时只取第一张
-                        drawing.image_url = images[0]
                     db.commit()
+                    db.refresh(drawing)
+
+                    # 更新返回结果，使用 COS URL 而不是 ComfyUI URL
+                    result["images"] = [drawing.image_url]
+                    result["thumbnail_url"] = drawing.thumbnail_url
+                    result["drawing_id"] = drawing.id
+                    logger.info(f"Drawing {drawing.id} status updated to finish, returning COS URLs")
 
         return {"code": 200, "msg": "OK", "data": result}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+async def upload_image_to_cos(drawing: Drawing, image_url: str, db: Session):
+    """上传图片到 COS
+
+    Args:
+        drawing: Drawing 模型实例
+        image_url: 图片 URL
+        db: 数据库会话
+    """
+    cos_service = COSStorageService()
+    image_processor = ImageProcessor()
+
+    temp_dir = tempfile.gettempdir()
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    local_path = None
+    thumbnail_path = None
+
+    try:
+        # 1. 下载图片到本地临时文件
+        local_path = os.path.join(temp_dir, f"drawing_{drawing.id}_{timestamp}.png")
+
+        # 如果是本地文件路径，直接复制；如果是 URL，下载
+        if image_url.startswith("http://") or image_url.startswith("https://"):
+            await image_processor.download_image(image_url, local_path)
+        else:
+            # 本地文件，直接复制
+            import shutil
+            shutil.copy(image_url, local_path)
+
+        # 2. 生成缩略图
+        thumbnail_data = image_processor.generate_thumbnail(local_path)
+        thumbnail_path = os.path.join(temp_dir, f"drawing_{drawing.id}_{timestamp}_thumb.png")
+        with open(thumbnail_path, 'wb') as f:
+            f.write(thumbnail_data)
+
+        # 3. 上传原图到 COS
+        original_result = await cos_service.upload_image(
+            local_path,
+            drawing.user_id,
+            drawing.id,
+            is_thumbnail=False
+        )
+
+        # 4. 上传缩略图到 COS
+        thumbnail_result = await cos_service.upload_image(
+            thumbnail_path,
+            drawing.user_id,
+            drawing.id,
+            is_thumbnail=True
+        )
+
+        # 5. 更新数据库记录
+        drawing.image_url = original_result["cos_url"]
+        drawing.cos_key = original_result["cos_key"]
+        drawing.thumbnail_url = thumbnail_result["cos_url"]
+        drawing.thumbnail_key = thumbnail_result["cos_key"]
+        drawing.file_size = original_result["file_size"]
+
+        # 6. 更新用户存储统计
+        StorageManager.update_user_storage(
+            drawing.user_id,
+            original_result["file_size"],
+            db
+        )
+
+        logger.info(f"Successfully uploaded drawing {drawing.id} to COS")
+
+    except Exception as e:
+        logger.error(f"Failed to upload drawing {drawing.id} to COS: {e}")
+        raise
+
+    finally:
+        # 7. 清理本地临时文件
+        if local_path and os.path.exists(local_path):
+            try:
+                os.remove(local_path)
+            except Exception as e:
+                logger.warning(f"Failed to remove temp file {local_path}: {e}")
+
+        if thumbnail_path and os.path.exists(thumbnail_path):
+            try:
+                os.remove(thumbnail_path)
+            except Exception as e:
+                logger.warning(f"Failed to remove temp file {thumbnail_path}: {e}")
+
 
 
 @router.post("/cancel/{backend}/{task_id}")

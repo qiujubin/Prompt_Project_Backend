@@ -91,3 +91,111 @@ curl "http://localhost:8000/api/admin/prompt_keywords?page=1&size=10&q=风格"
 
 ---
 更多接口详情见 `Backend/docs/API.md`。
+
+
+## COS 图片存储集成
+
+本项目已集成腾讯云 COS（对象存储服务）用于图片存储，提供高可用、高性能的图片存储和访问能力。
+
+### 配置 COS
+
+在 `.env` 文件中添加以下配置：
+
+```env
+# 腾讯云 COS 配置
+COS_SECRET_ID=your_secret_id_here
+COS_SECRET_KEY=your_secret_key_here
+COS_BUCKET=your_bucket_name_here
+COS_REGION=ap-guangzhou
+```
+
+### 功能特性
+
+- **自动上传**: 图片生成完成后自动上传到 COS
+- **缩略图生成**: 自动生成 400px 缩略图，提升加载速度
+- **存储统计**: 实时追踪用户存储空间使用情况
+- **批量删除**: 支持批量删除图片和 COS 文件
+- **重试机制**: 上传失败自动重试（最多 3 次）
+- **优雅降级**: COS 上传失败不影响图片生成
+
+### API 端点
+
+#### 存储统计
+```bash
+# 获取当前用户存储统计
+GET /api/v1/users/me/storage
+
+# 同步存储使用量（修复统计不准确）
+POST /api/v1/users/me/storage/sync
+```
+
+#### 图片管理
+```bash
+# 删除图片（自动删除 COS 文件）
+DELETE /api/v1/drawings/{drawing_id}
+
+# 批量删除图片
+POST /api/v1/drawings/batch-delete
+Body: {"drawing_ids": [1, 2, 3]}
+```
+
+### 数据迁移
+
+如果你有现有的本地图片需要迁移到 COS：
+
+```bash
+# 试运行（不实际上传）
+python -m Backend.scripts.migrate_images_to_cos --dry-run
+
+# 正式迁移
+python -m Backend.scripts.migrate_images_to_cos --batch-size 100
+
+# 从指定 ID 恢复迁移
+python -m Backend.scripts.migrate_images_to_cos --resume-from 1000
+```
+
+### 临时文件清理
+
+定期清理过期的临时文件：
+
+```bash
+# 清理超过 24 小时的临时文件
+python -m Backend.scripts.cleanup_temp_files
+
+# 清理超过 48 小时的临时文件
+python -m Backend.scripts.cleanup_temp_files --max-age 48
+
+# 试运行
+python -m Backend.scripts.cleanup_temp_files --dry-run
+```
+
+### 故障排查
+
+#### COS 上传失败
+
+1. **检查配置**: 确保 `.env` 中的 COS 配置正确
+2. **检查权限**: 确保 SecretId/SecretKey 有上传权限
+3. **检查网络**: 确保服务器能访问 COS 服务
+4. **查看日志**: 检查日志文件中的详细错误信息
+
+#### 存储统计不准确
+
+运行同步命令修复：
+
+```bash
+curl -X POST http://localhost:8000/api/v1/users/me/storage/sync \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+#### 图片无法访问
+
+1. **检查 Bucket 权限**: 确保 Bucket 允许公共读取
+2. **检查 URL 格式**: 确保 URL 格式正确
+3. **检查 CORS 配置**: 如果前端跨域访问，需配置 COS CORS
+
+### 性能优化建议
+
+- **CDN 加速**: 为 COS Bucket 配置 CDN 加速域名
+- **图片格式**: 使用 WebP 格式可减少 30-50% 文件大小
+- **缩略图**: 列表页使用缩略图，详情页使用原图
+- **懒加载**: 前端实现图片懒加载

@@ -9,6 +9,7 @@ from core.security import decode_token
 from database import get_db
 from models.user import User
 from schemas.user import UserRead
+from services.cos import StorageManager
 import shutil
 import os
 import uuid
@@ -62,10 +63,10 @@ def list_users(page: int = 1, size: int = 10, q: Optional[str] = None, current: 
     query = db.query(User)
     if q:
         query = query.filter(User.username.ilike(f"%{q}%"))
-    
+
     total = query.count()
     items = query.order_by(User.id.desc()).offset((page - 1) * size).limit(size).all()
-    
+
     return {
         "code": 200,
         "msg": "OK",
@@ -80,11 +81,11 @@ def delete_user(user_id: int, current: User = Depends(get_current_user), db: Ses
     """根据ID删除用户（仅管理员）。"""
     if current.role != "admin":
         raise HTTPException(status_code=403, detail="无权限")
-    
+
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-    
+
     db.delete(user)
     db.commit()
     return {"code": 200, "msg": "删除成功", "data": True}
@@ -94,14 +95,14 @@ def update_user_role(user_id: int, role: str, current: User = Depends(get_curren
     """管理员修改用户角色。"""
     if current.role != "admin":
         raise HTTPException(status_code=403, detail="无权限")
-    
+
     if role not in ["user", "admin"]:
          raise HTTPException(status_code=400, detail="无效的角色")
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-        
+
     user.role = role
     user.updated_at = func.now()
     db.commit()
@@ -116,12 +117,12 @@ def update_phone(user_id: int, phone: str, current_user: User = Depends(get_curr
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-    
+
     # 检查手机号是否被占用
     exists = db.query(User).filter(User.phone == phone).first()
     if exists and exists.id != user_id:
         raise HTTPException(status_code=400, detail="手机号已被使用")
-        
+
     user.phone = phone
     user.updated_at = func.now()
     db.commit()
@@ -136,12 +137,12 @@ def update_email(user_id: int, email: str, current_user: User = Depends(get_curr
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-    
+
     # 检查邮箱是否被占用
     exists = db.query(User).filter(User.email == email).first()
     if exists and exists.id != user_id:
         raise HTTPException(status_code=400, detail="邮箱已被使用")
-        
+
     user.email = email
     user.updated_at = func.now()
     db.commit()
@@ -152,13 +153,13 @@ def update_password(user_id: int, password: str, old_password: Optional[str] = N
     """用户修改密码。"""
     if current_user.id != user_id and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="无权限修改他人信息")
-        
+
     from core.security import get_password_hash, verify_password
-    
+
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-    
+
     # 如果是用户自己修改（非管理员强制修改），且提供了旧密码，则验证
     # 或者要求必须验证旧密码（更安全）
     # 这里逻辑：如果用户自己修改，必须提供旧密码。如果是管理员，可以不提供。
@@ -167,7 +168,7 @@ def update_password(user_id: int, password: str, old_password: Optional[str] = N
             raise HTTPException(status_code=400, detail="请提供旧密码")
         if not verify_password(old_password, user.hashed_password):
             raise HTTPException(status_code=400, detail="旧密码错误")
-        
+
     user.hashed_password = get_password_hash(password)
     user.updated_at = func.now()
     db.commit()
@@ -182,7 +183,7 @@ def update_username(user_id: int, username: str, current_user: User = Depends(ge
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-    
+
     # 检查用户名唯一性
     exists = db.query(User).filter(User.username == username).first()
     if exists and exists.id != user_id:
@@ -202,7 +203,7 @@ def update_signature(user_id: int, signature: str, current_user: User = Depends(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-        
+
     user.signature = signature
     user.updated_at = func.now()
     db.commit()
@@ -217,7 +218,7 @@ def update_avatar(user_id: int, avatar_url: str, current_user: User = Depends(ge
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-        
+
     user.avatar_url = avatar_url
     user.updated_at = func.now()
     db.commit()
@@ -228,16 +229,72 @@ def upload_avatar(file: UploadFile = File(...)):
     """上传头像并返回URL"""
     if not os.path.exists("static/uploads"):
         os.makedirs("static/uploads")
-    
+
     file_extension = os.path.splitext(file.filename)[1]
     filename = f"{uuid.uuid4()}{file_extension}"
     file_path = f"static/uploads/{filename}"
-    
+
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-        
+
     # Assuming the server is running on localhost:8000 or configured domain
     # For now returning relative path or absolute URL if domain is known
     # Better to return relative path and let frontend prepend base URL
     url = f"/static/uploads/{filename}"
     return {"code": 200, "msg": "Upload successful", "data": {"url": url}}
+
+
+@router.get("/me/storage")
+def get_user_storage_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户的存储统计信息
+
+    Returns:
+        {
+            "total_images": 图片总数,
+            "storage_used": 已使用空间（字节）,
+            "storage_used_mb": 已使用空间（MB）,
+            "average_size": 平均文件大小（字节）
+        }
+
+    Requirements: 7.4
+    """
+    try:
+        stats = StorageManager.get_user_storage_stats(current_user.id, db)
+        return {
+            "code": 200,
+            "msg": "OK",
+            "data": stats
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取存储统计失败: {str(e)}")
+
+
+@router.post("/me/storage/sync")
+def sync_user_storage(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """同步用户存储使用量
+
+    重新计算实际使用量并更新到 storage_used 字段。
+    用于修复存储统计不准确的问题。
+
+    Returns:
+        {
+            "old_storage": 旧的存储值,
+            "new_storage": 新的存储值,
+            "difference": 差异
+        }
+    """
+    try:
+        result = StorageManager.sync_user_storage(current_user.id, db)
+        return {
+            "code": 200,
+            "msg": "存储统计已同步",
+            "data": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"同步存储统计失败: {str(e)}")

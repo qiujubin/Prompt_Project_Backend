@@ -14,3 +14,4 @@ hypothesis>=6.0.0
 aiofiles>=24.1.0
 pillow>=10.4.0
 aiohttp>=3.10.0
+cos-python-sdk-v5>=1.9.30
