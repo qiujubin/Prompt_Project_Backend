@@ -123,33 +123,151 @@ class ExternalAIGenerator(AIGeneratorBase):
             }
 
     async def _generate_tongyi(self, prompt: str, negative_prompt: str, api_key: str, api_url: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """阿里云通义千问图像生成 API 调用"""
+        """阿里云通义千问图像生成 API 调用
+
+        支持两种模型系列：
+        1. 新 API（同步）: qwen-image-2.0 系列、qwen-image-plus、qwen-image-max、z-image-turbo
+        2. 旧 API（异步）: qwen-image（标准版）
+        """
+        model_name = params.get("model_name", "qwen-image-2.0")
+
+        # 判断使用哪种 API
+        # 新 API: qwen-image-2.0 系列（包括 qwen-image-2.0, qwen-image-2.0-pro）, qwen-image-plus, qwen-image-max, z-image-turbo
+        # 旧 API: qwen-image（标准版，异步）
+        is_new_api = (
+            model_name.startswith("qwen-image-2.0") or
+            model_name.startswith("qwen-image-max") or
+            model_name == "qwen-image-plus" or
+            model_name.lower() == "z-image-turbo"
+        )
+
+        if is_new_api:
+            # 新 API：同步接口，使用 multimodal-generation
+            return await self._generate_tongyi_new_api(prompt, negative_prompt, api_key, api_url, params)
+        else:
+            # 旧 API：异步接口，使用 text2image
+            return await self._generate_tongyi_legacy_api(prompt, negative_prompt, api_key, api_url, params)
+
+    async def _generate_tongyi_new_api(self, prompt: str, negative_prompt: str, api_key: str, api_url: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """通义千问新 API - 同步接口
+
+        支持的模型：
+        - qwen-image-2.0 系列（qwen-image-2.0, qwen-image-2.0-pro 等）
+        - qwen-image-plus
+        - qwen-image-max
+        - z-image-turbo（参数受限，不支持 n 和 watermark）
+        """
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
+        model_name = params.get("model_name", "qwen-image-2.0")
+
+        # 新 API 使用 messages 格式
+        data = {
+            "model": model_name,
+            "input": {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"text": prompt}
+                        ]
+                    }
+                ]
+            },
+            "parameters": {
+                "size": f"{params.get('width', 1024)}*{params.get('height', 1024)}",
+                "prompt_extend": params.get("prompt_extend", True)
+            }
+        }
+
+        # z-image-turbo 只支持基础参数，不支持 n 和 watermark
+        # qwen-image-2.0 系列和 qwen-image-plus 支持完整参数
+        if model_name.lower() != "z-image-turbo":
+            data["parameters"]["n"] = params.get("n", 1)
+            data["parameters"]["watermark"] = params.get("watermark", False)
+
+        # 添加负面提示词
+        if negative_prompt:
+            data["parameters"]["negative_prompt"] = negative_prompt
+
+        # 添加随机种子
+        if params.get("seed") and params.get("seed", -1) != -1:
+            data["parameters"]["seed"] = params.get("seed")
+
+        # 记录请求数据用于调试
+        logger.info(f"Tongyi new API request for model {model_name}: {json.dumps(data, ensure_ascii=False)}")
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                f"{api_url}/services/aigc/multimodal-generation/generation",
+                json=data,
+                headers=headers
+            )
+
+            if resp.status_code != 200:
+                error_text = resp.text
+                logger.error(f"Tongyi new API error for model {model_name}: {error_text}")
+                return {"status": "error", "msg": f"通义千问 API Error ({resp.status_code}): {error_text}"}
+
+            result = resp.json()
+
+            # 新 API 直接返回结果
+            if "output" in result and "choices" in result["output"]:
+                choices = result["output"]["choices"]
+                if choices and len(choices) > 0:
+                    content = choices[0].get("message", {}).get("content", [])
+                    if content and len(content) > 0:
+                        image_url = content[0].get("image")
+                        if image_url:
+                            return {
+                                "status": "completed",
+                                "images": [image_url],
+                                "image_url": image_url,
+                                "backend": "external_api",
+                                "provider": "tongyi",
+                                "seed": params.get("seed", -1)
+                            }
+
+            return {"status": "error", "msg": "通义千问 API 返回数据格式错误"}
+
+    async def _generate_tongyi_legacy_api(self, prompt: str, negative_prompt: str, api_key: str, api_url: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """通义千问旧 API（qwen-image-plus/qwen-image）- 异步接口"""
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
             "X-DashScope-Async": "enable"  # 启用异步模式
         }
 
-        # 构建完整提示词
-        full_prompt = prompt
-        if negative_prompt:
-            full_prompt += f", 不要包含: {negative_prompt}"
-
         data = {
-            "model": params.get("model_name", "wanx-v1"),
+            "model": params.get("model_name", "qwen-image-plus"),
             "input": {
-                "prompt": full_prompt
+                "prompt": prompt
             },
             "parameters": {
-                "style": params.get("style", "<auto>"),
                 "size": f"{params.get('width', 1024)}*{params.get('height', 1024)}",
                 "n": 1,
-                "seed": params.get("seed") if params.get("seed", -1) != -1 else None
+                "prompt_extend": params.get("prompt_extend", True),
+                "watermark": params.get("watermark", False)
             }
         }
 
+        # 添加负面提示词
+        if negative_prompt:
+            data["parameters"]["negative_prompt"] = negative_prompt
+
+        # 添加随机种子
+        if params.get("seed") and params.get("seed", -1) != -1:
+            data["parameters"]["seed"] = params.get("seed")
+
         async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(f"{api_url}/services/aigc/text2image/image-synthesis", json=data, headers=headers)
+            resp = await client.post(
+                f"{api_url}/services/aigc/text2image/image-synthesis",
+                json=data,
+                headers=headers
+            )
 
             if resp.status_code != 200:
                 error_text = resp.text
@@ -167,7 +285,7 @@ class ExternalAIGenerator(AIGeneratorBase):
                     "provider": "tongyi"
                 }
 
-            # 同步返回结果
+            # 同步返回结果（某些情况下可能直接返回）
             if "output" in result and "results" in result["output"]:
                 image_url = result["output"]["results"][0]["url"]
                 return {

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
@@ -38,9 +38,15 @@ class GenerateRequest(BaseModel):
     api_key: Optional[str] = Field(None, description="用户自定义的 External API Key")
     api_url: Optional[str] = Field(None, description="用户自定义的 External API URL")
     # 外部 API 专用参数
-    provider: Optional[str] = Field("openai", description="外部 API 提供商: openai, tongyi, baidu, tencent")
+    provider: Optional[str] = Field("openai", description="外部 API 提供商: openai, tongyi, baidu, deepseek, custom")
     secret_key: Optional[str] = Field(None, description="API Secret Key (百度等需要)")
-    style: Optional[str] = Field(None, description="生成风格 (部分 API 支持)")
+
+class TestConnectionRequest(BaseModel):
+    """测试连接请求模型"""
+    provider: str = Field(..., description="API 提供商 ID")
+    api_key: Optional[str] = Field(None, description="API Key (自定义提供商必需)")
+    api_url: Optional[str] = Field(None, description="可选，自定义 API URL")
+    secret_key: Optional[str] = Field(None, description="可选，Secret Key (百度等需要)")
 
 @router.post("/draw")
 async def generate_image(
@@ -92,11 +98,28 @@ async def generate_image(
 
         # 外部 API 专用参数
         if req.backend == "external":
-            params['provider'] = req.provider or "openai"
-            if req.secret_key:
-                params['secret_key'] = req.secret_key
-            if req.style:
-                params['style'] = req.style
+            from services.ai.providers_config import get_provider_config
+
+            provider = req.provider or "openai"
+            params['provider'] = provider
+
+            # 如果是自定义提供商，使用用户提供的配置
+            if provider == "custom":
+                if req.api_key:
+                    params['api_key'] = req.api_key
+                if req.api_url:
+                    params['api_url'] = req.api_url
+                if req.secret_key:
+                    params['secret_key'] = req.secret_key
+            else:
+                # 预设提供商，从环境变量读取配置
+                config = get_provider_config(provider)
+                if config and config.is_configured:
+                    params['api_key'] = config.api_key
+                    if config.api_url:
+                        params['api_url'] = config.api_url
+                    if config.secret_key:
+                        params['secret_key'] = config.secret_key
 
         try:
             result = await generator.generate_image(req.prompt, req.negative_prompt, params)
@@ -493,76 +516,86 @@ async def get_external_providers():
     Returns:
         支持的外部 AI 服务提供商信息
     """
-    providers = [
-        {
-            "id": "openai",
-            "name": "OpenAI DALL-E",
-            "description": "OpenAI 的 DALL-E 图像生成模型",
-            "supported_sizes": ["512x512", "1024x1024", "1024x1792", "1792x1024"],
-            "requires_secret": False,
-            "async_support": False,
-            "default_model": "dall-e-3"
-        },
-        {
-            "id": "tongyi",
-            "name": "阿里云通义千问",
-            "description": "阿里云通义千问万相图像生成",
-            "supported_sizes": ["512x512", "768x768", "1024x1024"],
-            "requires_secret": False,
-            "async_support": True,
-            "default_model": "wanx-v1"
-        },
-        {
-            "id": "baidu",
-            "name": "百度文心一言",
-            "description": "百度文心一言图像生成",
-            "supported_sizes": ["512x512", "768x768", "1024x1024"],
-            "requires_secret": True,
-            "async_support": False,
-            "default_model": "sd_xl"
-        },
-        {
-            "id": "tencent",
-            "name": "腾讯混元",
-            "description": "腾讯混元图像生成",
-            "supported_sizes": ["512x512", "768x768", "1024x1024"],
-            "requires_secret": False,
-            "async_support": False,
-            "default_model": "hunyuan"
-        }
-    ]
+    from services.ai.providers_config import load_provider_configs
+
+    configs = load_provider_configs()
+
+    providers = []
+    for provider_id, config in configs.items():
+        providers.append({
+            "id": config.id,
+            "name": config.name,
+            "description": config.description,
+            "is_configured": config.is_configured,
+            "requires_secret_key": config.requires_secret_key,
+            "supported_models": config.supported_models
+        })
 
     return {"code": 200, "msg": "OK", "data": providers}
 
 
-@router.post("/test-connection")
-async def test_external_api_connection(
-    provider: str,
-    api_key: str,
-    api_url: Optional[str] = None,
-    secret_key: Optional[str] = None
-):
-    """测试外部 API 连接。
+@router.get("/provider-models/{provider}")
+async def get_provider_models(provider: str):
+    """获取指定提供商支持的模型列表。
 
     Args:
-        provider: API 提供商 ID
-        api_key: API Key
-        api_url: 可选，自定义 API URL
-        secret_key: 可选，Secret Key (百度等需要)
+        provider: 提供商 ID
+
+    Returns:
+        模型列表
+    """
+    from services.ai.providers_config import get_provider_config
+
+    config = get_provider_config(provider)
+    if not config:
+        raise HTTPException(status_code=404, detail="提供商不存在")
+
+    return {
+        "code": 200,
+        "msg": "OK",
+        "data": {
+            "provider": provider,
+            "models": config.supported_models
+        }
+    }
+
+
+@router.post("/test-api-connection")
+async def test_external_api_connection_v2(request_body: TestConnectionRequest):
+    """测试外部 API 连接 (v2)。
+
+    Args:
+        request_body: 测试连接请求参数
 
     Returns:
         连接测试结果
     """
     try:
+        from services.ai.providers_config import get_provider_config
+
         # 构建测试参数
-        params = {
-            "provider": provider,
-            "api_key": api_key
-        }
-        if api_url:
-            params["api_url"] = api_url
-        if secret_key:
-            params["secret_key"] = secret_key
+        params = {"provider": request_body.provider}
+
+        # 如果是自定义提供商，使用用户提供的配置
+        if request_body.provider == "custom":
+            if not request_body.api_key:
+                return {"code": 400, "msg": "自定义提供商需要提供 API Key", "data": {"status": "failed"}}
+            params["api_key"] = request_body.api_key
+            if request_body.api_url:
+                params["api_url"] = request_body.api_url
+            if request_body.secret_key:
+                params["secret_key"] = request_body.secret_key
+        else:
+            # 预设提供商，从环境变量读取配置
+            config = get_provider_config(request_body.provider)
+            if not config or not config.is_configured:
+                return {"code": 400, "msg": f"提供商 {request_body.provider} 未配置", "data": {"status": "failed"}}
+
+            params["api_key"] = config.api_key
+            if config.api_url:
+                params["api_url"] = config.api_url
+            if config.secret_key:
+                params["secret_key"] = config.secret_key
 
         generator = get_ai_generator("external")
 
@@ -570,7 +603,7 @@ async def test_external_api_connection(
         test_prompt = "a simple test image"
 
         # 对于支持异步的 API，我们只测试连接，不实际生成
-        if provider.lower() in ["tongyi", "qwen", "aliyun"]:
+        if request_body.provider.lower() in ["tongyi", "qwen", "aliyun"]:
             # 通义千问：尝试获取模型列表或发送测试请求
             result = await generator.generate_image(test_prompt, "", params)
             if result.get("status") in ["queued", "completed"]:
@@ -587,6 +620,9 @@ async def test_external_api_connection(
 
     except Exception as e:
         return {"code": 500, "msg": f"连接测试失败: {str(e)}", "data": {"status": "error"}}
+
+
+@router.get("/comfyui/info")
 async def get_comfyui_info(
     comfyui_host: Optional[str] = None
 ):
