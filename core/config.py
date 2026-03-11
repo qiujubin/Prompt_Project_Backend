@@ -35,8 +35,23 @@ class Settings:
 
     # AI 配置
     COMFYUI_HOST = os.getenv("COMFYUI_HOST", "127.0.0.1:8188")
+
+    # 外部 AI API 配置
     AI_API_KEY = os.getenv("AI_API_KEY", "")
     AI_API_URL = os.getenv("AI_API_URL", "https://api.openai.com/v1")
+
+    # 通义千问配置
+    TONGYI_API_KEY = os.getenv("TONGYI_API_KEY", "")
+    TONGYI_API_URL = os.getenv("TONGYI_API_URL", "https://dashscope.aliyuncs.com/api/v1")
+
+    # 百度文心一言配置
+    BAIDU_AI_API_KEY = os.getenv("BAIDU_AI_API_KEY", "")
+    BAIDU_AI_SECRET_KEY = os.getenv("BAIDU_AI_SECRET_KEY", "")
+    BAIDU_AI_API_URL = os.getenv("BAIDU_AI_API_URL", "https://aip.baidubce.com")
+
+    # 腾讯混元配置
+    TENCENT_API_KEY = os.getenv("TENCENT_API_KEY", "")
+    TENCENT_API_URL = os.getenv("TENCENT_API_URL", "https://hunyuan.tencentcloudapi.com")
 
     # DeepSeek Config
     DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")

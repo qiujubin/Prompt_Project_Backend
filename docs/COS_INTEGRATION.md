@@ -352,7 +352,7 @@ tail -f logs/app.log | grep COS
 
 运行同步命令：
 ```bash
-curl -X POST http://localhost:8000/api/v1/users/me/storage/sync \
+curl -X POST http://localhost:4135/api/v1/users/me/storage/sync \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -487,7 +487,7 @@ document.querySelectorAll('img[data-src]').forEach(img => {
 
 ```bash
 # 获取所有用户的存储统计
-curl http://localhost:8000/api/v1/admin/storage/stats \
+curl http://localhost:4135/api/v1/admin/storage/stats \
   -H "Authorization: Bearer ADMIN_TOKEN"
 ```
 

@@ -37,6 +37,10 @@ class GenerateRequest(BaseModel):
     comfyui_host: Optional[str] = Field(None, description="用户自定义的 ComfyUI 地址")
     api_key: Optional[str] = Field(None, description="用户自定义的 External API Key")
     api_url: Optional[str] = Field(None, description="用户自定义的 External API URL")
+    # 外部 API 专用参数
+    provider: Optional[str] = Field("openai", description="外部 API 提供商: openai, tongyi, baidu, tencent")
+    secret_key: Optional[str] = Field(None, description="API Secret Key (百度等需要)")
+    style: Optional[str] = Field(None, description="生成风格 (部分 API 支持)")
 
 @router.post("/draw")
 async def generate_image(
@@ -85,6 +89,14 @@ async def generate_image(
             params['api_key'] = req.api_key
         if req.api_url:
             params['api_url'] = req.api_url
+
+        # 外部 API 专用参数
+        if req.backend == "external":
+            params['provider'] = req.provider or "openai"
+            if req.secret_key:
+                params['secret_key'] = req.secret_key
+            if req.style:
+                params['style'] = req.style
 
         try:
             result = await generator.generate_image(req.prompt, req.negative_prompt, params)
@@ -140,20 +152,26 @@ async def check_generation_status(
     backend: str,
     task_id: str,
     comfyui_host: Optional[str] = None,
+    provider: Optional[str] = None,
+    api_key: Optional[str] = None,
+    api_url: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """检查绘图任务状态（针对异步后端如 ComfyUI）。
+    """检查绘图任务状态（针对异步后端如 ComfyUI 和部分外部 API）。
 
     Args:
         backend: 后端类型 (comfyui/external)
         task_id: 任务 ID (prompt_id)
         comfyui_host: 可选，用户自定义的 ComfyUI 地址
+        provider: 可选，外部 API 提供商
+        api_key: 可选，用户自定义的 API Key
+        api_url: 可选，用户自定义的 API URL
     """
     try:
         # 首先检查数据库中的任务状态
         drawing = db.query(Drawing).filter(Drawing.prompt_id == task_id).first()
 
-        # 如果数据库中已经标记为完成，直接返回数据库结果，避免重复查询 ComfyUI
+        # 如果数据库中已经标记为完成，直接返回数据库结果，避免重复查询
         if drawing and drawing.status == "finish":
             logger.debug(f"Drawing {drawing.id} already finished, returning from database cache")
             return {
@@ -168,11 +186,17 @@ async def check_generation_status(
                 }
             }
 
-        # 否则，查询 ComfyUI 获取最新状态
+        # 否则，查询对应的后端获取最新状态
         generator = get_ai_generator(backend)
         params = {}
         if comfyui_host:
             params['server_address'] = comfyui_host
+        if provider:
+            params['provider'] = provider
+        if api_key:
+            params['api_key'] = api_key
+        if api_url:
+            params['api_url'] = api_url
 
         result = await generator.check_status(task_id, params=params)
 
@@ -197,7 +221,7 @@ async def check_generation_status(
                     db.commit()
                     db.refresh(drawing)
 
-                    # 更新返回结果，使用 COS URL 而不是 ComfyUI URL
+                    # 更新返回结果，使用 COS URL 而不是原始 URL
                     result["images"] = [drawing.image_url]
                     result["thumbnail_url"] = drawing.thumbnail_url
                     result["drawing_id"] = drawing.id
@@ -462,7 +486,107 @@ async def get_available_models(
         )
 
 
-@router.get("/comfyui/info")
+@router.get("/providers")
+async def get_external_providers():
+    """获取支持的外部 API 提供商列表。
+
+    Returns:
+        支持的外部 AI 服务提供商信息
+    """
+    providers = [
+        {
+            "id": "openai",
+            "name": "OpenAI DALL-E",
+            "description": "OpenAI 的 DALL-E 图像生成模型",
+            "supported_sizes": ["512x512", "1024x1024", "1024x1792", "1792x1024"],
+            "requires_secret": False,
+            "async_support": False,
+            "default_model": "dall-e-3"
+        },
+        {
+            "id": "tongyi",
+            "name": "阿里云通义千问",
+            "description": "阿里云通义千问万相图像生成",
+            "supported_sizes": ["512x512", "768x768", "1024x1024"],
+            "requires_secret": False,
+            "async_support": True,
+            "default_model": "wanx-v1"
+        },
+        {
+            "id": "baidu",
+            "name": "百度文心一言",
+            "description": "百度文心一言图像生成",
+            "supported_sizes": ["512x512", "768x768", "1024x1024"],
+            "requires_secret": True,
+            "async_support": False,
+            "default_model": "sd_xl"
+        },
+        {
+            "id": "tencent",
+            "name": "腾讯混元",
+            "description": "腾讯混元图像生成",
+            "supported_sizes": ["512x512", "768x768", "1024x1024"],
+            "requires_secret": False,
+            "async_support": False,
+            "default_model": "hunyuan"
+        }
+    ]
+
+    return {"code": 200, "msg": "OK", "data": providers}
+
+
+@router.post("/test-connection")
+async def test_external_api_connection(
+    provider: str,
+    api_key: str,
+    api_url: Optional[str] = None,
+    secret_key: Optional[str] = None
+):
+    """测试外部 API 连接。
+
+    Args:
+        provider: API 提供商 ID
+        api_key: API Key
+        api_url: 可选，自定义 API URL
+        secret_key: 可选，Secret Key (百度等需要)
+
+    Returns:
+        连接测试结果
+    """
+    try:
+        # 构建测试参数
+        params = {
+            "provider": provider,
+            "api_key": api_key
+        }
+        if api_url:
+            params["api_url"] = api_url
+        if secret_key:
+            params["secret_key"] = secret_key
+
+        generator = get_ai_generator("external")
+
+        # 使用简单的测试提示词
+        test_prompt = "a simple test image"
+
+        # 对于支持异步的 API，我们只测试连接，不实际生成
+        if provider.lower() in ["tongyi", "qwen", "aliyun"]:
+            # 通义千问：尝试获取模型列表或发送测试请求
+            result = await generator.generate_image(test_prompt, "", params)
+            if result.get("status") in ["queued", "completed"]:
+                return {"code": 200, "msg": "连接成功", "data": {"status": "connected"}}
+            else:
+                return {"code": 400, "msg": f"连接失败: {result.get('msg', '未知错误')}", "data": {"status": "failed"}}
+        else:
+            # 其他 API：发送测试请求
+            result = await generator.generate_image(test_prompt, "", params)
+            if result.get("status") == "completed":
+                return {"code": 200, "msg": "连接成功", "data": {"status": "connected"}}
+            else:
+                return {"code": 400, "msg": f"连接失败: {result.get('msg', '未知错误')}", "data": {"status": "failed"}}
+
+    except Exception as e:
+        return {"code": 500, "msg": f"连接测试失败: {str(e)}", "data": {"status": "error"}}
 async def get_comfyui_info(
     comfyui_host: Optional[str] = None
 ):

@@ -2,6 +2,16 @@
 
 本后端基于 FastAPI + SQLAlchemy + PostgreSQL 构建，提供用户认证、分类与提示词管理、绘图记录、游客模式、通用 CRUD、日志与性能监控等能力，面向前端 `Vue3 + Element Plus` 项目进行接口对接。
 
+## 🆕 新功能：外部 AI API 支持
+
+系统现已支持多种外部 AI 服务进行图像生成：
+- **OpenAI DALL-E**: 高质量图像生成
+- **阿里云通义千问万相**: 中文友好的 AI 绘图
+- **百度文心一言**: 国产 AI 图像生成
+- **腾讯混元**: 腾讯云 AI 服务
+
+详细使用说明请参考：[外部 API 使用指南](docs/EXTERNAL_API_GUIDE.md)
+
 ## 技术栈
 - Web 框架：FastAPI
 - ORM：SQLAlchemy (2.x)
@@ -41,13 +51,13 @@ Backend/
 ## 启动
 ```bash
 pip install -r Backend/requirements.txt
-python -m uvicorn Backend.main:app --reload --port 8000
+python -m uvicorn Backend.main:app --reload --port 4135
 ```
-接口文档访问：`http://localhost:8000/docs`
+接口文档访问：`http://localhost:4135/docs`
 
 ## 跨域与前端对接
 - 已开启 CORS，允许来自 `CORS_ORIGINS` 的跨域请求
-- 前端建议配置代理：`/api -> http://localhost:8000`
+- 前端建议配置代理：`/api -> http://localhost:4135`
 
 ## 核心功能
 - 认证与绑定：账户密码、邮箱/短信验证码登录，邮箱/手机号/微信绑定
@@ -64,23 +74,23 @@ python -m uvicorn Backend.main:app --reload --port 8000
 ## 示例请求
 - 注册：
 ```bash
-curl -X POST http://localhost:8000/api/auth/register \
+curl -X POST http://localhost:4135/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{"username":"demo","password":"123456"}'
 ```
 - 登录：
 ```bash
-curl -X POST http://localhost:8000/api/auth/login \
+curl -X POST http://localhost:4135/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"demo","password":"123456"}'
 ```
 - 获取分类树：
 ```bash
-curl http://localhost:8000/api/home/getPromptCatagory
+curl http://localhost:4135/api/home/getPromptCatagory
 ```
 - 管理端分页查询关键词：
 ```bash
-curl "http://localhost:8000/api/admin/prompt_keywords?page=1&size=10&q=风格"
+curl "http://localhost:4135/api/admin/prompt_keywords?page=1&size=10&q=风格"
 ```
 
 ## 扩展建议
@@ -183,7 +193,7 @@ python -m Backend.scripts.cleanup_temp_files --dry-run
 运行同步命令修复：
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/users/me/storage/sync \
+curl -X POST http://localhost:4135/api/v1/users/me/storage/sync \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
