@@ -12,6 +12,7 @@ from services.cos import COSStorageService, ImageProcessor, StorageManager
 from core.logger import get_logger
 import os
 import tempfile
+import base64
 from datetime import datetime
 
 logger = get_logger(__name__)
@@ -143,6 +144,43 @@ async def generate_image(
                     db.add(new_drawing)
                     db.commit()
 
+            # 如果是同步完成的任务（completed），立即保存到数据库并上传到 COS
+            elif result.get("status") == "completed":
+                images = result.get("images", [])
+                if images:
+                    image_url = images[0]
+
+                    # 创建 Drawing 记录
+                    new_drawing = Drawing(
+                        user_id=current_user.id,
+                        prompt=req.prompt,
+                        negative_prompt=req.negative_prompt,
+                        model_name=req.model_name or "default",
+                        width=req.width,
+                        height=req.height,
+                        seed=str(result.get("seed", -1)),
+                        status="finish",
+                        image_url=image_url,
+                        is_public=False
+                    )
+                    db.add(new_drawing)
+                    db.commit()
+                    db.refresh(new_drawing)
+
+                    # 尝试上传到 COS
+                    try:
+                        await upload_image_to_cos(new_drawing, image_url, db)
+                        logger.info(f"Successfully uploaded drawing {new_drawing.id} to COS")
+
+                        # 更新返回结果，使用 COS URL
+                        result["images"] = [new_drawing.image_url]
+                        result["thumbnail_url"] = new_drawing.thumbnail_url
+                        result["drawing_id"] = new_drawing.id
+                    except Exception as e:
+                        logger.error(f"Failed to upload to COS, but generation succeeded: {e}")
+                        # COS 上传失败不影响生成结果，但记录原始 URL
+                        result["drawing_id"] = new_drawing.id
+
             return {"code": 200, "msg": "OK", "data": result}
         except Exception as gen_err:
             # 生成失败，退还积分
@@ -262,7 +300,7 @@ async def upload_image_to_cos(drawing: Drawing, image_url: str, db: Session):
 
     Args:
         drawing: Drawing 模型实例
-        image_url: 图片 URL
+        image_url: 图片 URL 或 Base64 编码的图片
         db: 数据库会话
     """
     cos_service = COSStorageService()
@@ -277,21 +315,46 @@ async def upload_image_to_cos(drawing: Drawing, image_url: str, db: Session):
         # 1. 下载图片到本地临时文件
         local_path = os.path.join(temp_dir, f"drawing_{drawing.id}_{timestamp}.png")
 
-        # 如果是本地文件路径，直接复制；如果是 URL，下载
-        if image_url.startswith("http://") or image_url.startswith("https://"):
+        # 处理不同类型的图片源
+        if image_url.startswith("data:image"):
+            # Base64 编码的图片
+            logger.info(f"Processing Base64 image for drawing {drawing.id}")
+            try:
+                # 提取 Base64 数据
+                base64_data = image_url.split(",")[1] if "," in image_url else image_url
+                image_data = base64.b64decode(base64_data)
+
+                # 保存到临时文件
+                with open(local_path, 'wb') as f:
+                    f.write(image_data)
+                logger.info(f"Base64 image decoded and saved to {local_path}")
+            except Exception as e:
+                logger.error(f"Failed to decode Base64 image: {e}")
+                raise ValueError(f"Base64 图片解码失败: {e}")
+
+        elif image_url.startswith("http://") or image_url.startswith("https://"):
+            # HTTP URL，下载图片
+            logger.info(f"Downloading image from URL for drawing {drawing.id}: {image_url}")
             await image_processor.download_image(image_url, local_path)
+
         else:
-            # 本地文件，直接复制
+            # 本地文件路径，直接复制
+            logger.info(f"Copying local file for drawing {drawing.id}: {image_url}")
             import shutil
-            shutil.copy(image_url, local_path)
+            if os.path.exists(image_url):
+                shutil.copy(image_url, local_path)
+            else:
+                raise FileNotFoundError(f"本地文件不存在: {image_url}")
 
         # 2. 生成缩略图
+        logger.info(f"Generating thumbnail for drawing {drawing.id}")
         thumbnail_data = image_processor.generate_thumbnail(local_path)
         thumbnail_path = os.path.join(temp_dir, f"drawing_{drawing.id}_{timestamp}_thumb.png")
         with open(thumbnail_path, 'wb') as f:
             f.write(thumbnail_data)
 
         # 3. 上传原图到 COS
+        logger.info(f"Uploading original image to COS for drawing {drawing.id}")
         original_result = await cos_service.upload_image(
             local_path,
             drawing.user_id,
@@ -300,6 +363,7 @@ async def upload_image_to_cos(drawing: Drawing, image_url: str, db: Session):
         )
 
         # 4. 上传缩略图到 COS
+        logger.info(f"Uploading thumbnail to COS for drawing {drawing.id}")
         thumbnail_result = await cos_service.upload_image(
             thumbnail_path,
             drawing.user_id,
@@ -332,12 +396,14 @@ async def upload_image_to_cos(drawing: Drawing, image_url: str, db: Session):
         if local_path and os.path.exists(local_path):
             try:
                 os.remove(local_path)
+                logger.debug(f"Removed temp file: {local_path}")
             except Exception as e:
                 logger.warning(f"Failed to remove temp file {local_path}: {e}")
 
         if thumbnail_path and os.path.exists(thumbnail_path):
             try:
                 os.remove(thumbnail_path)
+                logger.debug(f"Removed temp file: {thumbnail_path}")
             except Exception as e:
                 logger.warning(f"Failed to remove temp file {thumbnail_path}: {e}")
 

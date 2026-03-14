@@ -33,6 +33,20 @@ class Settings:
     VERIFICATION_CODE_MAX_ATTEMPTS = int(os.getenv("VERIFICATION_CODE_MAX_ATTEMPTS", "5"))
     VERIFICATION_CODE_RESEND_INTERVAL = int(os.getenv("VERIFICATION_CODE_RESEND_INTERVAL", "60"))
 
+    # SMTP 邮件配置
+    SMTP_HOST = os.getenv("SMTP_HOST", "smtp.qq.com")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
+    SMTP_USER = os.getenv("SMTP_USER", "")
+    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+    EMAIL_FROM = os.getenv("EMAIL_FROM", "")
+
+    # 阿里云短信认证服务配置
+    ALIYUN_ACCESS_KEY_ID = os.getenv("ALIYUN_ACCESS_KEY_ID", "")
+    ALIYUN_ACCESS_KEY_SECRET = os.getenv("ALIYUN_ACCESS_KEY_SECRET", "")
+    SMS_SCHEME_NAME = os.getenv("SMS_SCHEME_NAME", "默认方案")
+    SMS_SIGN_NAME = os.getenv("SMS_SIGN_NAME", "速通互联验证码")  # 系统赠送签名
+    SMS_TEMPLATE_CODE = os.getenv("SMS_TEMPLATE_CODE", "100001")  # 系统赠送模板
+
     # AI 配置
     COMFYUI_HOST = os.getenv("COMFYUI_HOST", "127.0.0.1:8188")
 

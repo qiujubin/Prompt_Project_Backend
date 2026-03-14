@@ -4,7 +4,9 @@
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 from core.security import get_password_hash, verify_password, create_access_token
+from core.config import settings
 from database import get_db
 from models.user import User, SocialAccount
 from schemas.user import UserCreate, UserRead
@@ -12,6 +14,21 @@ from services.code_service import code_service
 import random
 
 router = APIRouter(prefix="/auth")
+
+class VerificationCodeRequest(BaseModel):
+    target: str
+    type: str
+    captcha: str
+
+class PhoneLoginRequest(BaseModel):
+    phoneNumber: str
+    captcha: str
+    verificationCode: str
+
+class EmailLoginRequest(BaseModel):
+    email: str
+    captcha: str
+    verificationCode: str
 
 def generate_unique_nickname(db: Session) -> str:
     """生成唯一的默认昵称 '用户_xxxx'"""
@@ -27,10 +44,10 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     exists = db.query(User).filter(User.username == payload.username).first()
     if exists:
         raise HTTPException(status_code=400, detail="用户名已存在")
-    
+
     nickname = generate_unique_nickname(db)
     user = User(
-        username=payload.username, 
+        username=payload.username,
         hashed_password=get_password_hash(payload.password),
         nickname=nickname
     )
@@ -138,3 +155,130 @@ def bind_wechat(user_id: int, openid: str, db: Session = Depends(get_db)):
         exists.user_id = user_id
     db.commit()
     return {"code": 200, "msg": "OK", "data": True}
+
+from services.email_service import email_service
+
+@router.post("/verification-code")
+def send_verification_code(
+    payload: VerificationCodeRequest,
+    db: Session = Depends(get_db)
+):
+    """统一的验证码发送接口
+
+    Args:
+        target: 手机号或邮箱
+        type: 'phone' 或 'email'
+        captcha: 人机验证码
+    """
+    # 验证人机验证码（简化实现，实际应该验证真实的captcha）
+    if not payload.captcha or len(payload.captcha) < 4:
+        raise HTTPException(status_code=400, detail="人机验证码无效")
+
+    try:
+        if payload.type == "phone":
+            # 🔥 使用阿里云短信认证服务发送真实短信
+            from services.sms_service import sms_service
+            result = sms_service.send_sms_verify_code(payload.target)
+
+            if result["success"]:
+                # 将阿里云返回的验证码存储到我们的验证码服务中
+                if result.get("verify_code"):
+                    # 使用阿里云返回的验证码，覆盖我们生成的
+                    code_service._store[("sms", payload.target)] = {
+                        "code": result["verify_code"],
+                        "sent_at": code_service._now(),
+                        "expire_at": code_service._now() + settings.VERIFICATION_CODE_EXPIRE_SECONDS,
+                        "attempts": 0,
+                    }
+
+                # 生产环境应该移除 verification_code 返回
+                return {
+                    "code": 200,
+                    "msg": "验证码已发送到您的手机",
+                    "data": {
+                        "phone": payload.target,
+                        "verification_code": result.get("verify_code")  # 测试环境返回
+                    }
+                }
+            else:
+                # 发送失败，返回友好的错误信息
+                error_msg = sms_service.get_error_message(result.get("error_code", ""))
+                raise HTTPException(status_code=500, detail=error_msg)
+        elif payload.type == "email":
+            code = code_service.generate("email", payload.target)
+
+            # 🔥 发送真实邮件
+            success = email_service.send_verification_code(payload.target, code)
+            if not success:
+                raise HTTPException(status_code=500, detail="邮件发送失败，请稍后重试")
+
+            # 生产环境应该移除 verification_code 返回
+            return {"code": 200, "msg": "验证码已发送到您的邮箱", "data": {"email": payload.target, "verification_code": code}}
+        else:
+            raise HTTPException(status_code=400, detail="不支持的验证码类型")
+    except ValueError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+
+@router.post("/login/phone")
+def login_with_phone(
+    payload: PhoneLoginRequest,
+    db: Session = Depends(get_db)
+):
+    """手机验证码登录
+
+    Args:
+        phoneNumber: 手机号
+        captcha: 人机验证码
+        verificationCode: 短信验证码
+    """
+    # 验证人机验证码
+    if not payload.captcha or len(payload.captcha) < 4:
+        raise HTTPException(status_code=400, detail="人机验证码无效")
+
+    # 验证短信验证码
+    if not code_service.verify("sms", payload.phoneNumber, payload.verificationCode):
+        raise HTTPException(status_code=400, detail="验证码错误或已失效")
+
+    # 查找或创建用户
+    user = db.query(User).filter(User.phone == payload.phoneNumber).first()
+    if not user:
+        nickname = generate_unique_nickname(db)
+        user = User(username=payload.phoneNumber, phone=payload.phoneNumber, nickname=nickname)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    token = create_access_token({"sub": user.username})
+    return {"code": 200, "msg": "登录成功", "data": {"access_token": token, "token_type": "bearer"}}
+
+@router.post("/login/email")
+def login_with_email(
+    payload: EmailLoginRequest,
+    db: Session = Depends(get_db)
+):
+    """邮箱验证码登录
+
+    Args:
+        email: 邮箱地址
+        captcha: 人机验证码
+        verificationCode: 邮箱验证码
+    """
+    # 验证人机验证码
+    if not payload.captcha or len(payload.captcha) < 4:
+        raise HTTPException(status_code=400, detail="人机验证码无效")
+
+    # 验证邮箱验证码
+    if not code_service.verify("email", payload.email, payload.verificationCode):
+        raise HTTPException(status_code=400, detail="验证码错误或已失效")
+
+    # 查找或创建用户
+    user = db.query(User).filter(User.email == payload.email).first()
+    if not user:
+        nickname = generate_unique_nickname(db)
+        user = User(username=payload.email, email=payload.email, nickname=nickname)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    token = create_access_token({"sub": user.username})
+    return {"code": 200, "msg": "登录成功", "data": {"access_token": token, "token_type": "bearer"}}

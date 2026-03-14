@@ -17,3 +17,4 @@ aiohttp>=3.10.0
 cos-python-sdk-v5>=1.9.30
 pandas>=2.0.0
 openpyxl>=3.1.0
+alibabacloud-dypnsapi20170525>=2.0.0
