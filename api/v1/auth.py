@@ -239,14 +239,10 @@ def login_with_phone(
     if not code_service.verify("sms", payload.phoneNumber, payload.verificationCode):
         raise HTTPException(status_code=400, detail="验证码错误或已失效")
 
-    # 查找或创建用户
+    # 查找用户
     user = db.query(User).filter(User.phone == payload.phoneNumber).first()
     if not user:
-        nickname = generate_unique_nickname(db)
-        user = User(username=payload.phoneNumber, phone=payload.phoneNumber, nickname=nickname)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+        raise HTTPException(status_code=404, detail="用户不存在")
 
     token = create_access_token({"sub": user.username})
     return {"code": 200, "msg": "登录成功", "data": {"access_token": token, "token_type": "bearer"}}
@@ -271,14 +267,68 @@ def login_with_email(
     if not code_service.verify("email", payload.email, payload.verificationCode):
         raise HTTPException(status_code=400, detail="验证码错误或已失效")
 
-    # 查找或创建用户
+    # 查找用户
     user = db.query(User).filter(User.email == payload.email).first()
     if not user:
-        nickname = generate_unique_nickname(db)
-        user = User(username=payload.email, email=payload.email, nickname=nickname)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+        raise HTTPException(status_code=404, detail="用户不存在")
 
     token = create_access_token({"sub": user.username})
     return {"code": 200, "msg": "登录成功", "data": {"access_token": token, "token_type": "bearer"}}
+
+@router.post("/register/phone")
+def register_with_phone(
+    payload: PhoneLoginRequest,
+    db: Session = Depends(get_db)
+):
+    """手机号注册并登录"""
+    # 验证人机验证码
+    if not payload.captcha or len(payload.captcha) < 4:
+        raise HTTPException(status_code=400, detail="人机验证码无效")
+
+    # 验证短信验证码
+    if not code_service.verify("sms", payload.phoneNumber, payload.verificationCode):
+        raise HTTPException(status_code=400, detail="验证码错误或已失效")
+
+    # 检查用户是否已存在
+    existing_user = db.query(User).filter(User.phone == payload.phoneNumber).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="该手机号已注册")
+
+    # 创建新用户
+    nickname = generate_unique_nickname(db)
+    user = User(username=payload.phoneNumber, phone=payload.phoneNumber, nickname=nickname)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token({"sub": user.username})
+    return {"code": 200, "msg": "注册成功", "data": {"access_token": token, "token_type": "bearer"}}
+
+@router.post("/register/email")
+def register_with_email(
+    payload: EmailLoginRequest,
+    db: Session = Depends(get_db)
+):
+    """邮箱注册并登录"""
+    # 验证人机验证码
+    if not payload.captcha or len(payload.captcha) < 4:
+        raise HTTPException(status_code=400, detail="人机验证码无效")
+
+    # 验证邮箱验证码
+    if not code_service.verify("email", payload.email, payload.verificationCode):
+        raise HTTPException(status_code=400, detail="验证码错误或已失效")
+
+    # 检查用户是否已存在
+    existing_user = db.query(User).filter(User.email == payload.email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="该邮箱已注册")
+
+    # 创建新用户
+    nickname = generate_unique_nickname(db)
+    user = User(username=payload.email, email=payload.email, nickname=nickname)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token({"sub": user.username})
+    return {"code": 200, "msg": "注册成功", "data": {"access_token": token, "token_type": "bearer"}}
