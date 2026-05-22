@@ -1,12 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 from services.ai import get_ai_generator
 from api.v1.users import get_current_user
 from database import get_db
 from models.user import User
 from models.drawing import Drawing
+from models.prompt_log import PromptLog
+from models.prompt_keyword import PromptKeyword
+from models.user_prompt_keyword import UserPromptKeyword
 from api.v1.credits import deduct_credits, add_credits
 from services.cos import COSStorageService, ImageProcessor, StorageManager
 from core.logger import get_logger
@@ -18,6 +21,20 @@ from datetime import datetime
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/generation")
+
+class TestConnectionRequest(BaseModel):
+    """测试连接请求模型"""
+    provider: str = Field(..., description="API 提供商 ID")
+    api_key: Optional[str] = Field(None, description="API Key (自定义提供商必需)")
+    api_url: Optional[str] = Field(None, description="可选，自定义 API URL")
+    secret_key: Optional[str] = Field(None, description="可选，Secret Key (百度等需要)")
+
+class PromptKeywordUsage(BaseModel):
+    """提示词使用记录"""
+    keyword_id: int = Field(..., description="关键词ID")
+    weight: float = Field(1.0, description="权重")
+    is_negative: bool = Field(False, description="是否负面提示词")
+    category_id: int = Field(..., description="小分类ID")
 
 class GenerateRequest(BaseModel):
     """图像生成请求模型
@@ -42,13 +59,9 @@ class GenerateRequest(BaseModel):
     # 外部 API 专用参数
     provider: Optional[str] = Field("openai", description="外部 API 提供商: openai, tongyi, baidu, deepseek, custom")
     secret_key: Optional[str] = Field(None, description="API Secret Key (百度等需要)")
-
-class TestConnectionRequest(BaseModel):
-    """测试连接请求模型"""
-    provider: str = Field(..., description="API 提供商 ID")
-    api_key: Optional[str] = Field(None, description="API Key (自定义提供商必需)")
-    api_url: Optional[str] = Field(None, description="可选，自定义 API URL")
-    secret_key: Optional[str] = Field(None, description="可选，Secret Key (百度等需要)")
+    # 提示词关键词ID列表（用于统计）
+    positive_keywords: Optional[List[PromptKeywordUsage]] = Field(default=[], description="正面提示词关键词列表")
+    negative_keywords: Optional[List[PromptKeywordUsage]] = Field(default=[], description="负面提示词关键词列表")
 
 @router.post("/draw")
 async def generate_image(
@@ -147,6 +160,8 @@ async def generate_image(
                     )
                     db.add(new_drawing)
                     db.commit()
+                    # 记录提示词使用日志
+                    log_prompt_usage(new_drawing.id, req.positive_keywords, req.negative_keywords, current_user.id, db)
 
             # 如果是同步完成的任务（completed），立即保存到数据库并上传到 COS
             elif result.get("status") == "completed":
@@ -170,6 +185,9 @@ async def generate_image(
                     db.add(new_drawing)
                     db.commit()
                     db.refresh(new_drawing)
+
+                    # 记录提示词使用日志
+                    log_prompt_usage(new_drawing.id, req.positive_keywords, req.negative_keywords, current_user.id, db)
 
                     # 尝试上传到 COS
                     try:
@@ -301,6 +319,83 @@ async def check_generation_status(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def log_prompt_usage(drawing_id: int, positive_keywords: List[PromptKeywordUsage], negative_keywords: List[PromptKeywordUsage], user_id: int, db: Session):
+    """记录提示词使用日志并更新用户统计
+
+    Args:
+        drawing_id: Drawing记录ID
+        positive_keywords: 正面提示词列表
+        negative_keywords: 负面提示词列表
+        user_id: 用户ID
+        db: 数据库会话
+    """
+    # 合并正负面提示词
+    all_keywords = []
+    if positive_keywords:
+        for kw in positive_keywords:
+            all_keywords.append({
+                "keyword_id": kw.keyword_id,
+                "weight": kw.weight,
+                "is_negative": False,
+                "category_id": kw.category_id
+            })
+    if negative_keywords:
+        for kw in negative_keywords:
+            all_keywords.append({
+                "keyword_id": kw.keyword_id,
+                "weight": kw.weight,
+                "is_negative": True,
+                "category_id": kw.category_id
+            })
+
+    if not all_keywords:
+        logger.debug(f"No keywords to log for drawing {drawing_id}")
+        return
+
+    for kw_data in all_keywords:
+        keyword_id = kw_data["keyword_id"]
+        weight = kw_data["weight"]
+        is_negative = kw_data["is_negative"]
+        category_id = kw_data["category_id"]
+
+        # 1. 创建 PromptLog 记录
+        prompt_log = PromptLog(
+            user_id=user_id,
+            prompt_id=keyword_id,
+            drawing_id=drawing_id,
+            small_category_id=category_id,
+            weight=weight,
+            is_negative=is_negative
+        )
+        db.add(prompt_log)
+
+        # 2. 更新 UserPromptKeyword 的 generated_count
+        user_keyword = db.query(UserPromptKeyword).filter(
+            UserPromptKeyword.user_id == user_id,
+            UserPromptKeyword.keyword_id == keyword_id
+        ).first()
+
+        if user_keyword:
+            user_keyword.generated_count = (user_keyword.generated_count or 0) + 1
+            user_keyword.last_generated_at = datetime.now()
+        else:
+            # 如果不存在记录，创建新记录
+            new_user_keyword = UserPromptKeyword(
+                user_id=user_id,
+                keyword_id=keyword_id,
+                used_count=0,
+                generated_count=1,
+                last_used_at=datetime.now(),
+                first_used_at=datetime.now(),
+                last_generated_at=datetime.now(),
+                first_generated_at=datetime.now()
+            )
+            db.add(new_user_keyword)
+
+    db.commit()
+    logger.info(f"Logged {len(all_keywords)} keyword usage for drawing {drawing_id}")
 
 
 async def upload_image_to_cos(drawing: Drawing, image_url: str, db: Session):

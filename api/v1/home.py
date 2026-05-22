@@ -108,7 +108,8 @@ def _categories(db: Session, user_id: int = None):
             "usage_count": k.usage_count,
             "used_count": user_usage_map.get(k.id, 0),
             "created_by": k.created_by, # Standardize
-            "user_id": k.created_by # Keep for backward compatibility if needed
+            "user_id": k.created_by, # Keep for backward compatibility if needed
+            "small_category_id": k.small_category_id # 用于统计记录
         })
 
     # 构建 Subcategory Map: cat_id -> [subcategories]
