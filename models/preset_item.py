@@ -24,7 +24,7 @@ class PresetItem(Base):
     """
     __tablename__ = "preset_items"
 
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True, autoincrement=True)
     preset_id = Column(
         BigInteger,
         ForeignKey("prompt_presets.id", ondelete="CASCADE"),

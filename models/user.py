@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Boolean, BigInteger
+from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Boolean, BigInteger, Integer
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func, text
 from database import Base
@@ -10,7 +10,7 @@ class User(Base):
     常用字段：用户名、邮箱、头像、是否活跃、角色、注册来源等。
     """
     __tablename__ = "users"
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True, autoincrement=True)
     username = Column(String(64), unique=True, index=True, nullable=False)
     nickname = Column(String(64), unique=True, index=True, nullable=True)
     email = Column(String(128), unique=True, index=True, nullable=True)
@@ -42,7 +42,7 @@ class SocialAccount(Base):
     记录微信等第三方账号的 openid、令牌与昵称信息。
     """
     __tablename__ = "social_accounts"
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
     openid = Column(Text, nullable=False)
     access_token = Column(Text, nullable=True)

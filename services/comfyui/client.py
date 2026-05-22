@@ -5,7 +5,7 @@ import asyncio
 import json
 import uuid
 from typing import Dict, Any, Optional, List
-import httpx
+from utils.httpx_compat import httpx_compat as httpx
 import aiofiles
 from pathlib import Path
 
@@ -58,22 +58,30 @@ class ComfyUIClient:
                     "error": f"HTTP {response.status_code}: {response.text}"
                 }
 
-        except httpx.ConnectError:
-            return {
-                "success": False,
-                "error": "Connection refused. Please check if ComfyUI is running."
-            }
-        except httpx.TimeoutException:
-            return {
-                "success": False,
-                "error": "Connection timeout. Please check ComfyUI server status."
-            }
         except Exception as e:
-            logger.error(f"ComfyUI connection test failed: {e}")
-            return {
-                "success": False,
-                "error": f"Unexpected error: {str(e)}"
-            }
+            error_msg = str(e)
+            # Check for specific error types by string matching and exception type
+            error_str = str(e).lower()
+            error_type = type(e).__name__.lower()
+
+            if ("connecterror" in error_str or "connection" in error_str or
+                "connecterror" in error_type or "connectionerror" in error_type or
+                "refused" in error_str or "unreachable" in error_str):
+                return {
+                    "success": False,
+                    "error": "Connection refused. Please check if ComfyUI is running."
+                }
+            elif "timeout" in error_str or "timeout" in error_type:
+                return {
+                    "success": False,
+                    "error": "Connection timeout. Please check ComfyUI server status."
+                }
+            else:
+                logger.error(f"ComfyUI connection test failed: {e}")
+                return {
+                    "success": False,
+                    "error": f"Unexpected error: {str(e)}"
+                }
 
     async def get_queue_status(self) -> Dict[str, Any]:
         """获取队列状态"""
@@ -125,32 +133,38 @@ class ComfyUIClient:
                     "error": "No prompt_id returned from ComfyUI"
                 }
 
-        except httpx.HTTPStatusError as e:
-            error_msg = f"HTTP {e.response.status_code}: {e.response.text}"
-            logger.error(f"Failed to submit prompt: {error_msg}")
-            logger.error(f"Workflow that caused error: {json.dumps(workflow, indent=2)}")
-
-            # 尝试解析 ComfyUI 的错误响应
-            try:
-                error_detail = e.response.json()
-                logger.error(f"ComfyUI error detail: {json.dumps(error_detail, indent=2)}")
-                return {
-                    "success": False,
-                    "error": error_msg,
-                    "detail": error_detail
-                }
-            except:
-                return {
-                    "success": False,
-                    "error": error_msg
-                }
         except Exception as e:
-            logger.error(f"Failed to submit prompt: {e}")
-            logger.error(f"Workflow that caused error: {json.dumps(workflow, indent=2)}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            error_str = str(e).lower()
+            error_type = type(e).__name__.lower()
+
+            # 检查是否是 HTTP 状态错误
+            if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+                error_msg = f"HTTP {e.response.status_code}: {e.response.text if hasattr(e.response, 'text') else 'Unknown error'}"
+                logger.error(f"Failed to submit prompt: {error_msg}")
+                logger.error(f"Workflow that caused error: {json.dumps(workflow, indent=2)}")
+
+                # 尝试解析 ComfyUI 的错误响应
+                try:
+                    error_detail = e.response.json()
+                    logger.error(f"ComfyUI error detail: {json.dumps(error_detail, indent=2)}")
+                    return {
+                        "success": False,
+                        "error": error_msg,
+                        "detail": error_detail
+                    }
+                except Exception:
+                    return {
+                        "success": False,
+                        "error": error_msg
+                    }
+            else:
+                # 其他类型的异常
+                logger.error(f"Failed to submit prompt: {e}")
+                logger.error(f"Workflow that caused error: {json.dumps(workflow, indent=2)}")
+                return {
+                    "success": False,
+                    "error": str(e)
+                }
 
     async def get_prompt_status(self, prompt_id: str) -> Dict[str, Any]:
         """获取任务状态"""

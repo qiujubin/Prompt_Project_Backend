@@ -10,7 +10,7 @@ class CreditLog(Base):
     """
     __tablename__ = "credit_logs"
     
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
     change_amount = Column(Integer, nullable=False) # 变动数量，正数为增加，负数为消耗
     reason = Column(String(64), nullable=False) # 变动原因：daily_login, generation_cost, like_reward, recharge

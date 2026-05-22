@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, BigInteger, Numeric, Boolean
+from sqlalchemy import Column, DateTime, ForeignKey, BigInteger, Integer, Numeric, Boolean
 from sqlalchemy.sql import func
 from database import Base
 
@@ -9,7 +9,7 @@ class PromptLog(Base):
     记录用户在某次绘图的提示词选择、权重与是否为反向词等。
     """
     __tablename__ = "prompt_logs"
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True, autoincrement=True)
     prompt_id = Column(BigInteger, ForeignKey("prompt_keywords.id"), nullable=False)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
     used_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -10,6 +10,7 @@ from models.drawing import Drawing
 from api.v1.credits import deduct_credits, add_credits
 from services.cos import COSStorageService, ImageProcessor, StorageManager
 from core.logger import get_logger
+from utils.http_client import SafeHTTPClient, ConnectionError, TimeoutError, HTTPError
 import os
 import tempfile
 import base64
@@ -123,7 +124,10 @@ async def generate_image(
                         params['secret_key'] = config.secret_key
 
         try:
+            logger.info(f"Starting generation with backend: {req.backend}")
+            logger.info(f"Generation params: {params}")
             result = await generator.generate_image(req.prompt, req.negative_prompt, params)
+            logger.info(f"Generation result: {result}")
 
             # 如果是异步任务（queued），保存初始记录到数据库
             if result.get("status") == "queued":
@@ -184,6 +188,10 @@ async def generate_image(
             return {"code": 200, "msg": "OK", "data": result}
         except Exception as gen_err:
             # 生成失败，退还积分
+            logger.error(f"Generation failed with error: {gen_err}")
+            logger.error(f"Error type: {type(gen_err)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             if cost > 0:
                 add_credits(current_user.id, cost, "refund", "生成失败退款", db)
             raise gen_err
@@ -511,29 +519,71 @@ async def get_available_models(
         可用模型列表，包括 checkpoints、VAE、samplers 等
     """
     try:
+        logger.info(f"Getting models for backend: {backend}, custom host: {comfyui_host}")
+
         if backend != "comfyui":
             return {"code": 200, "msg": "OK", "data": {"checkpoints": []}}
 
         # 使用 ComfyUI 客户端获取模型信息
         from services.comfyui.client import ComfyUIClient
         from core.comfyui_config import get_comfyui_settings
-        import httpx
 
         settings = get_comfyui_settings()
+        logger.info(f"ComfyUI settings loaded: {settings.base_url}")
 
         # 确定使用的地址
         if comfyui_host:
             # 用户自定义地址，直接使用
             target_url = f"http://{comfyui_host}"
+            logger.info(f"Using custom ComfyUI host: {target_url}")
         else:
             # 使用配置的地址
             target_url = settings.base_url
+            logger.info(f"Using configured ComfyUI host: {target_url}")
 
         # 获取模型信息
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(f"{target_url}/object_info")
-            resp.raise_for_status()
+        logger.info(f"Fetching models from: {target_url}/object_info")
+
+        try:
+            http_client = SafeHTTPClient(timeout=30.0)
+            resp = await http_client.get(f"{target_url}/object_info")
             object_info = resp.json()
+        except ConnectionError as e:
+            error_code = "CONNECTION_ERROR"
+            error_msg = f"无法连接到 ComfyUI 服务 ({target_url})。请检查 ComfyUI 是否正在运行。"
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "message": error_msg,
+                    "error_code": error_code
+                }
+            )
+        except TimeoutError as e:
+            error_code = "TIMEOUT_ERROR"
+            error_msg = f"连接 ComfyUI 超时。请检查服务器状态。"
+            raise HTTPException(
+                status_code=504,
+                detail={
+                    "message": error_msg,
+                    "error_code": error_code
+                }
+            )
+        except HTTPError as e:
+            if e.status_code in [502, 503]:
+                error_code = "SERVICE_UNAVAILABLE"
+                error_msg = f"ComfyUI 服务不可用。请检查 ComfyUI 是否正在运行。"
+            else:
+                error_code = "HTTP_ERROR"
+                error_msg = f"HTTP {e.status_code} 错误"
+            raise HTTPException(
+                status_code=e.status_code or 500,
+                detail={
+                    "message": error_msg,
+                    "error_code": error_code
+                }
+            )
+
+        logger.info(f"Successfully fetched object_info, parsing models...")
 
         # 解析模型信息
         models = {}
@@ -546,31 +596,24 @@ async def get_available_models(
                 if ckpt_name and isinstance(ckpt_name, list) and len(ckpt_name) > 0:
                     models["checkpoints"] = ckpt_name[0] if isinstance(ckpt_name[0], list) else []
 
+        logger.info(f"Successfully parsed {len(models.get('checkpoints', []))} checkpoints")
         return {"code": 200, "msg": "OK", "data": models}
 
-    except httpx.ConnectError as e:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "message": f"无法连接到 ComfyUI 服务 ({target_url if 'target_url' in locals() else 'unknown'})。请检查 ComfyUI 是否正在运行。",
-                "error_code": "CONNECTION_ERROR"
-            }
-        )
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=e.response.status_code,
-            detail={
-                "message": f"ComfyUI 返回错误: {e.response.status_code}",
-                "error_code": "HTTP_ERROR"
-            }
-        )
+    except (ConnectionError, TimeoutError, HTTPError):
+        # 这些异常已经在上面处理过了，直接重新抛出
+        raise
     except Exception as e:
         error_msg = str(e)
+        error_code = "INTERNAL_ERROR"
+
+        logger.error(f"Unexpected error in get_available_models: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
             detail={
                 "message": f"获取模型列表失败: {error_msg}",
-                "error_code": "INTERNAL_ERROR"
+                "error_code": error_code
             }
         )
 
@@ -702,7 +745,6 @@ async def get_comfyui_info(
     """
     try:
         from core.comfyui_config import get_comfyui_settings
-        import httpx
 
         settings = get_comfyui_settings()
 
@@ -714,16 +756,50 @@ async def get_comfyui_info(
             # 使用配置的地址
             target_url = settings.base_url
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            http_client = SafeHTTPClient(timeout=30.0)
+
             # 获取系统状态
-            system_resp = await client.get(f"{target_url}/system_stats")
-            system_resp.raise_for_status()
+            system_resp = await http_client.get(f"{target_url}/system_stats")
             system_stats = system_resp.json()
 
             # 获取对象信息（包含模型路径信息）
-            object_resp = await client.get(f"{target_url}/object_info")
-            object_resp.raise_for_status()
+            object_resp = await http_client.get(f"{target_url}/object_info")
             object_info = object_resp.json()
+        except ConnectionError as e:
+            error_code = "CONNECTION_ERROR"
+            error_msg = f"无法连接到 ComfyUI 服务 ({target_url})。请检查 ComfyUI 是否正在运行。"
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "message": error_msg,
+                    "error_code": error_code
+                }
+            )
+        except TimeoutError as e:
+            error_code = "TIMEOUT_ERROR"
+            error_msg = f"连接 ComfyUI 超时。请检查服务器状态。"
+            raise HTTPException(
+                status_code=504,
+                detail={
+                    "message": error_msg,
+                    "error_code": error_code
+                }
+            )
+        except HTTPError as e:
+            if e.status_code in [502, 503]:
+                error_code = "SERVICE_UNAVAILABLE"
+                error_msg = f"ComfyUI 服务不可用。请检查 ComfyUI 是否正在运行。"
+            else:
+                error_code = "HTTP_ERROR"
+                error_msg = f"HTTP {e.status_code} 错误"
+            raise HTTPException(
+                status_code=e.status_code or 500,
+                detail={
+                    "message": error_msg,
+                    "error_code": error_code
+                }
+            )
 
             # 提取模型数量
             model_counts = {}
@@ -746,20 +822,17 @@ async def get_comfyui_info(
                 }
             }
 
-    except httpx.ConnectError:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "message": f"无法连接到 ComfyUI 服务 ({target_url if 'target_url' in locals() else 'unknown'})。请检查 ComfyUI 是否正在运行。",
-                "error_code": "CONNECTION_ERROR"
-            }
-        )
+    except (ConnectionError, TimeoutError, HTTPError):
+        # 这些异常已经在上面处理过了，直接重新抛出
+        raise
     except Exception as e:
         error_msg = str(e)
+        error_code = "INTERNAL_ERROR"
+
         raise HTTPException(
             status_code=500,
             detail={
                 "message": f"获取 ComfyUI 信息失败: {error_msg}",
-                "error_code": "INTERNAL_ERROR"
+                "error_code": error_code
             }
         )

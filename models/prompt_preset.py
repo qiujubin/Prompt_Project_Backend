@@ -28,7 +28,7 @@ class PromptPreset(Base):
     """
     __tablename__ = "prompt_presets"
 
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True, autoincrement=True)
     name = Column(String(256), nullable=False)
     display_name = Column(String(256), nullable=False)
     subcategory_id = Column(BigInteger, ForeignKey("prompt_subcategories.id"), nullable=True)

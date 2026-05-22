@@ -11,7 +11,7 @@ class UserPreference(Base):
     """
     __tablename__ = "user_preferences"
 
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
     preference_type = Column(String(50), nullable=False, index=True)  # tag, style, color, creator
     preference_value = Column(String(200), nullable=False)
@@ -29,7 +29,7 @@ class UserInteraction(Base):
     """
     __tablename__ = "user_interactions"
 
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
     content_id = Column(BigInteger, ForeignKey("drawings.id"), nullable=False, index=True)
     interaction_type = Column(String(20), nullable=False, index=True)  # view, like, favorite, comment, share

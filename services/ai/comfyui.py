@@ -1,7 +1,7 @@
 import json
 import uuid
 import websockets
-import httpx
+from utils.httpx_compat import httpx_compat as httpx
 import urllib.request
 import urllib.parse
 import random
@@ -34,9 +34,9 @@ class ComfyUIGenerator(AIGeneratorBase):
     """
 
     def __init__(self):
-        self.server_address = settings.COMFYUI_HOST
-        self.client_id = str(uuid.uuid4())
         self.comfyui_settings = get_comfyui_settings()
+        self.server_address = f"{self.comfyui_settings.host}:{self.comfyui_settings.port}"
+        self.client_id = str(uuid.uuid4())
         self.retry_handler = RetryHandler(RetryConfig(
             max_attempts=self.comfyui_settings.max_retry_attempts,
             initial_delay=self.comfyui_settings.retry_delay,
@@ -420,22 +420,29 @@ class ComfyUIGenerator(AIGeneratorBase):
                     "model": model_name
                 }
             }
-        except httpx.ConnectError:
-            return {"status": "error", "msg": "无法连接到 ComfyUI 服务。请检查 ComfyUI 是否正在运行，以及地址和端口是否正确。", "error_code": "CONNECTION_REFUSED"}
-        except httpx.TimeoutException:
-            return {"status": "error", "msg": "连接 ComfyUI 超时。请检查服务器状态和网络连接。", "error_code": "CONNECTION_TIMEOUT"}
         except Exception as e:
             error_msg = str(e)
             error_code = "UNKNOWN_ERROR"
 
-            # 检测特定错误类型
-            if "out of memory" in error_msg.lower() or "cuda" in error_msg.lower():
+            # Check for specific error types by string matching and exception type
+            error_str = str(e).lower()
+            error_type = type(e).__name__.lower()
+
+            if ("connecterror" in error_str or "connection" in error_str or
+                "connecterror" in error_type or "connectionerror" in error_type or
+                "refused" in error_str or "unreachable" in error_str):
+                error_code = "CONNECTION_REFUSED"
+                error_msg = "无法连接到 ComfyUI 服务。请检查 ComfyUI 是否正在运行，以及地址和端口是否正确。"
+            elif "timeout" in error_str or "timeout" in error_type:
+                error_code = "CONNECTION_TIMEOUT"
+                error_msg = "连接 ComfyUI 超时。请检查服务器状态和网络连接。"
+            elif "out of memory" in error_str or "cuda" in error_str:
                 error_code = "OUT_OF_MEMORY"
                 error_msg = "GPU 内存不足。请尝试降低图像分辨率或关闭其他占用 GPU 的程序。"
-            elif "model" in error_msg.lower() and ("not found" in error_msg.lower() or "找不到" in error_msg):
+            elif "model" in error_str and ("not found" in error_str or "找不到" in error_str):
                 error_code = "MODEL_NOT_FOUND"
                 error_msg = f"找不到指定的模型文件。请检查模型是否存在于 ComfyUI 的 models 目录。原始错误: {str(e)}"
-            elif "node" in error_msg.lower() or "plugin" in error_msg.lower():
+            elif "node" in error_str or "plugin" in error_str:
                 error_code = "PLUGIN_MISSING"
                 error_msg = f"缺少必要的 ComfyUI 插件或节点。请使用 ComfyUI Manager 安装缺失的插件。原始错误: {str(e)}"
 
@@ -550,24 +557,23 @@ class ComfyUIGenerator(AIGeneratorBase):
                 "message": "任务处理中..."
             }
 
-        except httpx.ConnectError:
-            return {
-                "status": "error",
-                "error": "无法连接到 ComfyUI 服务。请检查 ComfyUI 是否正在运行。",
-                "error_code": "CONNECTION_REFUSED"
-            }
-        except httpx.TimeoutException:
-            return {
-                "status": "error",
-                "error": "连接 ComfyUI 超时。请检查服务器状态。",
-                "error_code": "CONNECTION_TIMEOUT"
-            }
         except Exception as e:
             error_msg = str(e)
             error_code = "UNKNOWN_ERROR"
 
-            # 检测特定错误类型
-            if "out of memory" in error_msg.lower() or "cuda" in error_msg.lower():
+            # Check for specific error types by string matching and exception type
+            error_str = str(e).lower()
+            error_type = type(e).__name__.lower()
+
+            if ("connecterror" in error_str or "connection" in error_str or
+                "connecterror" in error_type or "connectionerror" in error_type or
+                "refused" in error_str or "unreachable" in error_str):
+                error_code = "CONNECTION_REFUSED"
+                error_msg = "无法连接到 ComfyUI 服务。请检查 ComfyUI 是否正在运行。"
+            elif "timeout" in error_str or "timeout" in error_type:
+                error_code = "CONNECTION_TIMEOUT"
+                error_msg = "连接 ComfyUI 超时。请检查服务器状态。"
+            elif "out of memory" in error_str or "cuda" in error_str:
                 error_code = "OUT_OF_MEMORY"
                 error_msg = "GPU 内存不足。请尝试降低图像分辨率。"
 

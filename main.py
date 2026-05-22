@@ -27,9 +27,13 @@ from api.v1.presets import router as presets_router
 from fastapi.staticfiles import StaticFiles
 import os
 
-Base.metadata.create_all(bind=engine)
-
 app = FastAPI()
+
+@app.on_event("startup")
+def init_db():
+    if os.getenv("DISABLE_DB_INIT") == "1":
+        return
+    Base.metadata.create_all(bind=engine)
 
 # Mount static files
 if not os.path.exists("static"):

@@ -11,7 +11,7 @@ class SearchLog(Base):
     """
     __tablename__ = "search_logs"
 
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=True, index=True)
     query = Column(Text, nullable=False)
     filters = Column(JSON, nullable=True)  # 过滤条件

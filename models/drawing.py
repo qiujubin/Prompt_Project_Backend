@@ -11,7 +11,7 @@ class Drawing(Base):
     新增社区字段：浏览量、点赞数、收藏数、评论数。
     """
     __tablename__ = "drawings"
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
     title = Column(String(255), nullable=True)
     prompt = Column(Text, nullable=False)

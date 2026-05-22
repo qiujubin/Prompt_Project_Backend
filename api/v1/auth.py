@@ -4,21 +4,24 @@
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from core.security import get_password_hash, verify_password, create_access_token
 from core.config import settings
 from database import get_db
 from models.user import User, SocialAccount
 from schemas.user import UserCreate, UserRead
 from services.code_service import code_service
+from services.captcha_service import captcha_service
 import random
 
 router = APIRouter(prefix="/auth")
 
 class VerificationCodeRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
     target: str
     type: str
     captcha: str
+    captcha_id: str | None = Field(default=None, alias="captchaId")
 
 class PhoneLoginRequest(BaseModel):
     phoneNumber: str
@@ -29,6 +32,10 @@ class EmailLoginRequest(BaseModel):
     email: str
     captcha: str
     verificationCode: str
+
+@router.get("/captcha")
+def get_captcha():
+    return {"code": 200, "msg": "OK", "data": captcha_service.create()}
 
 def generate_unique_nickname(db: Session) -> str:
     """生成唯一的默认昵称 '用户_xxxx'"""
@@ -170,9 +177,12 @@ def send_verification_code(
         type: 'phone' 或 'email'
         captcha: 人机验证码
     """
-    # 验证人机验证码（简化实现，实际应该验证真实的captcha）
-    if not payload.captcha or len(payload.captcha) < 4:
-        raise HTTPException(status_code=400, detail="人机验证码无效")
+    if payload.captcha_id:
+        if not captcha_service.verify(payload.captcha_id, payload.captcha):
+            raise HTTPException(status_code=400, detail="人机验证码错误或已失效")
+    else:
+        if not payload.captcha or len(payload.captcha) < 4:
+            raise HTTPException(status_code=400, detail="人机验证码无效")
 
     try:
         if payload.type == "phone":

@@ -64,6 +64,7 @@ def get_community_feed(
         if d.user:
             d_data.username = d.user.username
             d_data.nickname = d.user.nickname
+            d_data.avatar_url = d.user.avatar_url
 
         if user_id:
             d_data.is_liked = db.query(exists().where(DrawingLike.user_id == user_id, DrawingLike.drawing_id == d.id)).scalar()

@@ -2,6 +2,10 @@
 
 提供测试数据库、测试客户端等共享的测试设施。
 """
+import os
+
+os.environ.setdefault("DISABLE_DB_INIT", "1")
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine

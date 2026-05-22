@@ -29,7 +29,7 @@ class DrawingComment(Base):
     对应表: `drawing_comments`
     """
     __tablename__ = "drawing_comments"
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
     drawing_id = Column(BigInteger, ForeignKey("drawings.id"), nullable=False)
     content = Column(Text, nullable=False)

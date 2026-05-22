@@ -11,7 +11,7 @@ class Tag(Base):
     """
     __tablename__ = "tags"
 
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True, autoincrement=True)
     name = Column(String(100), unique=True, nullable=False, index=True)
     category = Column(String(50), nullable=False, index=True)  # style, theme, technique, color
     usage_count = Column(Integer, default=0, server_default=text("0"))

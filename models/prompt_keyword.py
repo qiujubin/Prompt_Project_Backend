@@ -9,7 +9,7 @@ class PromptKeyword(Base):
     存放具体提示词文本与其所属的小类、创建者等信息。
     """
     __tablename__ = "prompt_keywords"
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True, autoincrement=True)
     word = Column(String(256), nullable=False)
     display_name = Column(String(256), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)

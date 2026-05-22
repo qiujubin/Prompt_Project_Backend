@@ -4,7 +4,7 @@
 """
 
 import os
-import httpx
+from utils.httpx_compat import httpx_compat as httpx
 from typing import Tuple
 from io import BytesIO
 from PIL import Image

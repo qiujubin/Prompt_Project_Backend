@@ -17,7 +17,7 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 from enum import Enum
 import websockets
-import httpx
+from utils.httpx_compat import httpx_compat as httpx
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
 from core.comfyui_config import get_comfyui_settings

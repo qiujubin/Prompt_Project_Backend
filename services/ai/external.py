@@ -1,4 +1,4 @@
-import httpx
+from utils.httpx_compat import httpx_compat as httpx
 import json
 import base64
 from typing import Dict, Any, Optional
