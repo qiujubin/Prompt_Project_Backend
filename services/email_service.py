@@ -22,7 +22,7 @@ class SMTPEmailService:
             message = MIMEMultipart('alternative')
             message['From'] = self.from_email  # 直接使用邮箱地址
             message['To'] = to_email
-            message['Subject'] = Header('【AI绘图平台】验证码', 'utf-8')
+            message['Subject'] = Header('【Prompt Studio】验证码', 'utf-8')
 
             # HTML 邮件内容
             html_content = f"""
@@ -78,7 +78,7 @@ class SMTPEmailService:
             </head>
             <body>
                 <div class="container">
-                    <h1 class="title">🎨 AI绘图平台</h1>
+                    <h1 class="title">🎨 Prompt Studio</h1>
                     <div class="content">
                         <h2>您的验证码</h2>
                         <div class="code">{code}</div>
@@ -90,7 +90,7 @@ class SMTPEmailService:
                     </div>
                     <div class="footer">
                         <p>此邮件由系统自动发送，请勿回复</p>
-                        <p>© 2026 AI绘图平台 - 智能创作与社区分享</p>
+                        <p>© 2026 Prompt Studio - 智能创作与社区分享</p>
                     </div>
                 </div>
             </body>
@@ -99,7 +99,7 @@ class SMTPEmailService:
 
             # 纯文本内容（备用）
             text_content = f"""
-            【AI绘图平台】验证码
+            【Prompt Studio】验证码
 
             您的验证码是：{code}
 
