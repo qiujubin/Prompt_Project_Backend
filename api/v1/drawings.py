@@ -34,6 +34,24 @@ class DrawingPublicUpdate(BaseModel):
 class DrawingStatusUpdate(BaseModel):
     status: str
 
+class DrawingTitleUpdate(BaseModel):
+    title: str
+
+@router.put("/{drawing_id}/title")
+def update_drawing_title(drawing_id: int, update_in: DrawingTitleUpdate, db: Session = Depends(get_db)):
+    """
+    根据ID修改绘图的标题 (title)。
+    """
+    drawing = db.query(Drawing).filter(Drawing.id == drawing_id).first()
+    if not drawing:
+        raise HTTPException(status_code=404, detail="绘图记录不存在")
+
+    drawing.title = update_in.title
+    db.commit()
+    db.refresh(drawing)
+
+    return {"code": 200, "msg": "标题更新成功", "data": drawing}
+
 @router.post("/create")
 def create_drawing(drawing_in: DrawingCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
