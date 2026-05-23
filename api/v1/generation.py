@@ -179,7 +179,7 @@ async def generate_image(
                         height=req.height,
                         seed=str(result.get("seed", -1)),
                         status="finish",
-                        image_url=image_url,
+                        local_url=image_url,  # 保存原始 URL
                         is_public=False
                     )
                     db.add(new_drawing)
@@ -200,7 +200,10 @@ async def generate_image(
                         result["drawing_id"] = new_drawing.id
                     except Exception as e:
                         logger.error(f"Failed to upload to COS, but generation succeeded: {e}")
-                        # COS 上传失败不影响生成结果，但记录原始 URL
+                        # COS 上传失败时使用原始 URL
+                        new_drawing.image_url = image_url
+                        db.commit()
+                        result["images"] = [image_url]
                         result["drawing_id"] = new_drawing.id
 
             return {"code": 200, "msg": "OK", "data": result}
@@ -294,7 +297,7 @@ async def check_generation_status(
                 if images:
                     # 获取第一张图片 URL
                     image_url = images[0]
-                    drawing.image_url = image_url
+                    drawing.local_url = image_url  # 保存原始 URL
 
                     # 尝试上传到 COS
                     try:
@@ -302,7 +305,8 @@ async def check_generation_status(
                         logger.info(f"Successfully uploaded drawing {drawing.id} to COS")
                     except Exception as e:
                         logger.error(f"Failed to upload to COS, but generation succeeded: {e}")
-                        # COS 上传失败不影响生成结果
+                        # COS 上传失败时使用原始 URL
+                        drawing.image_url = image_url
 
                     drawing.status = "finish"
                     db.commit()

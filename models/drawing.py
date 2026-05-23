@@ -35,6 +35,7 @@ class Drawing(Base):
 
     # COS 存储相关字段
     cos_key = Column(String(512), nullable=True, index=True)  # COS 对象键
+    local_url = Column(Text, nullable=True)  # 原始本地 URL（ComfyUI 生成时）
     thumbnail_url = Column(Text, nullable=True)  # 缩略图 URL
     thumbnail_key = Column(String(512), nullable=True)  # 缩略图对象键
     file_size = Column(BigInteger, nullable=True)  # 文件大小（字节）

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_, and_
 from typing import Optional
 from pydantic import BaseModel
 
@@ -16,7 +16,7 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/drawings")
 
 class DrawingCreate(BaseModel):
-    user_id: int
+    user_id: Optional[int] = None  # 忽略此字段，使用 current_user.id
     title: Optional[str] = None
     prompt: str
     negative_prompt: Optional[str] = None
@@ -124,16 +124,39 @@ def list_drawings(
     - 如果提供 user_id，则获取该用户的绘图 (需本人或管理员)。
     - 如果不提供 user_id (仅管理员)，则获取所有绘图。
     """
-    q = db.query(Drawing)
     if user_id:
-        # Check permission
         if current_user.id != user_id and current_user.role != "admin":
              raise HTTPException(status_code=403, detail="无权限查看他人绘图记录")
-        q = q.filter(Drawing.user_id == user_id)
+        q = db.query(Drawing).filter(
+            Drawing.user_id == user_id,
+            Drawing.status != "delete",
+            or_(
+                and_(
+                    Drawing.image_url.isnot(None),
+                    Drawing.image_url != ""
+                ),
+                and_(
+                    Drawing.local_url.isnot(None),
+                    Drawing.local_url != ""
+                )
+            )
+        )
     else:
-        # Admin only for all drawings
         if current_user.role != "admin":
             raise HTTPException(status_code=403, detail="无权限查看所有绘图记录")
+        q = db.query(Drawing).filter(
+            Drawing.status != "delete",
+            or_(
+                and_(
+                    Drawing.image_url.isnot(None),
+                    Drawing.image_url != ""
+                ),
+                and_(
+                    Drawing.local_url.isnot(None),
+                    Drawing.local_url != ""
+                )
+            )
+        )
 
     total = q.count()
     drawings = q.order_by(Drawing.created_at.desc())\
