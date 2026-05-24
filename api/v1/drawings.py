@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from database import get_db
 from models.drawing import Drawing
 from models.user import User
+from models.prompt_log import PromptLog
 from schemas.drawing import DrawingRead
 from api.v1.users import get_current_user, get_current_user_optional
 from services.cos import COSStorageService, StorageManager
@@ -236,7 +237,14 @@ async def delete_drawing(
         except Exception as e:
             logger.error(f"Failed to update user storage: {e}")
 
-    # 3. 删除数据库记录
+    # 3. 删除关联的 prompt_logs
+    try:
+        db.query(PromptLog).filter(PromptLog.drawing_id == drawing_id).delete()
+        logger.info(f"Deleted prompt_logs for drawing {drawing_id}")
+    except Exception as e:
+        logger.error(f"Failed to delete prompt_logs for drawing {drawing_id}: {e}")
+
+    # 4. 删除数据库记录
     db.delete(drawing)
     db.commit()
 
@@ -299,6 +307,12 @@ async def batch_delete_drawings(
                     )
                 except Exception as e:
                     logger.error(f"Failed to update user storage: {e}")
+
+            # 删除关联的 prompt_logs
+            try:
+                db.query(PromptLog).filter(PromptLog.drawing_id == drawing_id).delete()
+            except Exception as e:
+                logger.error(f"Failed to delete prompt_logs for drawing {drawing_id}: {e}")
 
             # 删除数据库记录
             db.delete(drawing)
