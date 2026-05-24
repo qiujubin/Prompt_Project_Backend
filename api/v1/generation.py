@@ -830,6 +830,271 @@ async def test_external_api_connection_v2(request_body: TestConnectionRequest):
         return {"code": 500, "msg": f"连接测试失败: {str(e)}", "data": {"status": "error"}}
 
 
+class ConvertPromptRequest(BaseModel):
+    """提示词转换请求模型"""
+    text: str = Field(..., description="待转换的提示词文本")
+    mode: str = Field(..., description="转换模式: 'tag_to_natural', 'natural_to_tag' 或 'translate'")
+    direction: Optional[str] = Field("auto", description="转换方向: 'positive' 或 'negative'")
+
+
+@router.post("/convert")
+async def convert_prompt(
+    req: ConvertPromptRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """使用 AI 将标签式提示词转换为自然语言，或将自然语言转换为标签式。
+
+    Args:
+        req: 转换请求，包含待转换文本和转换模式
+        current_user: 当前登录用户
+        db: 数据库会话
+
+    Returns:
+        转换后的提示词文本
+    """
+    try:
+        from services.ai.providers_config import get_provider_config
+
+        # 获取可用的 AI provider（优先使用 DeepSeek）
+        provider = "deepseek"
+        config = get_provider_config(provider)
+
+        if not config or not config.is_configured:
+            # 尝试其他 provider
+            for p in ["tongyi", "openai"]:
+                config = get_provider_config(p)
+                if config and config.is_configured:
+                    provider = p
+                    break
+
+        if not config or not config.is_configured:
+            return {"code": 400, "msg": "未配置可用的 AI 服务", "data": None}
+
+        # 构建转换提示词
+        if req.mode == "tag_to_natural":
+            system_prompt = """你是一个 AI 绘图提示词优化助手。你的任务是将标签式的提示词转换为自然语言描述。
+
+输入：标签式提示词，格式可能是：
+- 关键词列表：masterpiece, best quality, 1girl, blonde hair
+- 带权重标签：(anime:1.2), (realistic:0.8)
+
+输出：自然语言描述，应该：
+1. 保留原始意图和关键元素
+2. 添加合适的氛围、环境、构图描述
+3. 使用流畅的中文自然语言
+4. 不要改变原有的核心元素
+5. 可以适当补充合理的细节
+
+请直接输出转换后的自然语言描述，不要加引号或额外说明。"""
+
+            user_prompt = f"请将以下标签式提示词转换为自然语言描述：\n\n{req.text}"
+
+        elif req.mode == "natural_to_tag":
+            system_prompt = """你是一个 AI 绘图提示词优化助手。你的任务是将自然语言描述转换为标签式提示词。
+
+输入：中文或英文的自然语言描述，如："一个漂亮的动漫女孩，金色长发，蓝色眼睛，站在海边，夕阳西下"
+
+输出：标签式提示词，应该：
+1. 提取关键元素（主体、风格、背景、氛围等）
+2. 使用英文标签，这是 AI 绘图最常用的语言
+3. 重要标签可以重复以增强权重
+4. 添加质量相关的标签如 masterpiece, best quality
+5. 按照重要程度排列，核心元素在前
+
+格式要求：
+- 使用逗号分隔每个标签
+- 重要标签可使用 (tag:weight) 格式设置权重（1.0-1.5）
+- 不要使用换行，一行输出所有标签
+- 不要加引号或额外说明
+
+请直接输出标签式提示词。"""
+
+            user_prompt = f"请将以下自然语言描述转换为标签式提示词：\n\n{req.text}"
+
+        elif req.mode == "translate":
+            # 中英文互换模式
+            # 判断输入是中文还是英文
+            import re
+            has_chinese = bool(re.search(r'[一-鿿]', req.text))
+
+            if has_chinese:
+                # 中文 -> 英文
+                system_prompt = """你是一个 AI 绘图提示词翻译助手。你的任务是将中文提示词翻译为英文。
+
+输入：中文标签或描述，如："美女，动漫风格，高质量"
+
+输出：英文标签，应该：
+1. 保持简洁的标签格式
+2. 使用 AI 绘图常用的英文术语
+3. 重要标签可以重复以增强权重
+4. 添加质量相关的标签如 masterpiece, best quality
+
+格式要求：
+- 使用逗号分隔每个标签
+- 不要使用换行
+- 不要加引号或额外说明
+
+请直接输出英文标签。"""
+            else:
+                # 英文 -> 中文
+                system_prompt = """你是一个 AI 绘图提示词翻译助手。你的任务是将英文标签翻译为中文。
+
+输入：英文标签或描述，如："beautiful girl, anime style, masterpiece"
+
+输出：中文标签，应该：
+1. 保持简洁的标签格式
+2. 使用中文关键词
+3. 符合中文表达习惯
+
+格式要求：
+- 使用逗号分隔每个标签
+- 不要使用换行
+- 不要加引号或额外说明
+
+请直接输出中文标签。"""
+
+            user_prompt = f"请将以下提示词翻译：\n\n{req.text}"
+
+        # 使用文本补全 API
+        if provider == "deepseek":
+            from utils.httpx_compat import httpx_compat as httpx
+            headers = {
+                "Authorization": f"Bearer {config.api_key}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "model": "deepseek-chat",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 500
+            }
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    f"{config.api_url}/chat/completions",
+                    json=data,
+                    headers=headers
+                )
+
+                if resp.status_code != 200:
+                    return {"code": 500, "msg": f"AI 服务调用失败: {resp.text}", "data": None}
+
+                result_data = resp.json()
+                if "choices" in result_data and len(result_data["choices"]) > 0:
+                    converted_text = result_data["choices"][0]["message"]["content"]
+                    return {"code": 200, "msg": "OK", "data": {"text": converted_text, "mode": req.mode}}
+
+        elif provider == "tongyi":
+            # 通义千问使用 text generation API
+            from utils.httpx_compat import httpx_compat as httpx
+            headers = {
+                "Authorization": f"Bearer {config.api_key}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "model": "qwen-turbo",
+                "input": {
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                },
+                "parameters": {
+                    "temperature": 0.7,
+                    "max_tokens": 500
+                }
+            }
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    f"{config.api_url}/services/aigc/text-generation/generation",
+                    json=data,
+                    headers=headers
+                )
+
+                if resp.status_code != 200:
+                    return {"code": 500, "msg": f"AI 服务调用失败: {resp.text}", "data": None}
+
+                result_data = resp.json()
+                if "output" in result_data and "choices" in result_data["output"]:
+                    converted_text = result_data["output"]["choices"][0]["message"]["content"]
+                    return {"code": 200, "msg": "OK", "data": {"text": converted_text, "mode": req.mode}}
+
+        elif provider == "deepseek":
+            from utils.httpx_compat import httpx_compat as httpx
+            headers = {
+                "Authorization": f"Bearer {config.api_key}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "model": "deepseek-chat",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 500
+            }
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    f"{config.api_url}/chat/completions",
+                    json=data,
+                    headers=headers
+                )
+
+                if resp.status_code != 200:
+                    return {"code": 500, "msg": f"AI 服务调用失败: {resp.text}", "data": None}
+
+                result_data = resp.json()
+                if "choices" in result_data and len(result_data["choices"]) > 0:
+                    converted_text = result_data["choices"][0]["message"]["content"]
+                    return {"code": 200, "msg": "OK", "data": {"text": converted_text, "mode": req.mode}}
+
+        elif provider == "openai":
+            from utils.httpx_compat import httpx_compat as httpx
+            headers = {
+                "Authorization": f"Bearer {config.api_key}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "model": "gpt-3.5-turbo",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 500
+            }
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    f"{config.api_url}/chat/completions",
+                    json=data,
+                    headers=headers
+                )
+
+                if resp.status_code != 200:
+                    return {"code": 500, "msg": f"AI 服务调用失败: {resp.text}", "data": None}
+
+                result_data = resp.json()
+                if "choices" in result_data and len(result_data["choices"]) > 0:
+                    converted_text = result_data["choices"][0]["message"]["content"]
+                    return {"code": 200, "msg": "OK", "data": {"text": converted_text, "mode": req.mode}}
+
+        return {"code": 500, "msg": "不支持的 AI 提供商", "data": None}
+
+    except Exception as e:
+        logger.error(f"Convert prompt failed: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return {"code": 500, "msg": f"转换失败: {str(e)}", "data": None}
+
+
 @router.get("/comfyui/info")
 async def get_comfyui_info(
     comfyui_host: Optional[str] = None
