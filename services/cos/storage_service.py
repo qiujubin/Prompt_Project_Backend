@@ -35,6 +35,7 @@ class COSStorageService:
     MULTIPART_THRESHOLD = 5 * 1024 * 1024  # 5MB
     MAX_RETRY_ATTEMPTS = 3
     BASE_PATH = "ai-drawing-platform/images"
+    AVATAR_BASE_PATH = "ai-drawing-platform/avatars"
 
     def __init__(self):
         self.config_service = config_service
@@ -44,24 +45,30 @@ class COSStorageService:
         user_id: int,
         drawing_id: int,
         timestamp: str,
-        is_thumbnail: bool = False
+        is_thumbnail: bool = False,
+        is_avatar: bool = False
     ) -> str:
         """构建 COS 对象键
 
         Format: ai-drawing-platform/images/{user_id}/{drawing_id}_{timestamp}.png
         Thumbnail: ai-drawing-platform/images/{user_id}/{drawing_id}_{timestamp}_thumb.png
+        Avatar: ai-drawing-platform/avatars/{user_id}/{timestamp}.png
 
         Args:
             user_id: 用户 ID
             drawing_id: 作品 ID
             timestamp: 时间戳
             is_thumbnail: 是否为缩略图
+            is_avatar: 是否为头像
 
         Returns:
             COS 对象键字符串
 
         Requirements: 2.2
         """
+        if is_avatar:
+            return f"{self.AVATAR_BASE_PATH}/{user_id}/{timestamp}.png"
+
         suffix = "_thumb" if is_thumbnail else ""
         filename = f"{drawing_id}_{timestamp}{suffix}.png"
         return f"{self.BASE_PATH}/{user_id}/{filename}"
@@ -71,7 +78,8 @@ class COSStorageService:
         file_path: str,
         user_id: int,
         drawing_id: int,
-        is_thumbnail: bool = False
+        is_thumbnail: bool = False,
+        is_avatar: bool = False
     ) -> Dict[str, Any]:
         """上传图片到 COS
 
@@ -83,6 +91,7 @@ class COSStorageService:
             user_id: 用户 ID
             drawing_id: 作品 ID
             is_thumbnail: 是否为缩略图
+            is_avatar: 是否为头像
 
         Returns:
             {
@@ -103,7 +112,7 @@ class COSStorageService:
 
             # 生成对象键
             timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-            cos_key = self._build_object_key(user_id, drawing_id, timestamp, is_thumbnail)
+            cos_key = self._build_object_key(user_id, drawing_id, timestamp, is_thumbnail, is_avatar)
 
             # 获取文件大小
             import os

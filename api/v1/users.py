@@ -9,10 +9,14 @@ from core.security import decode_token
 from database import get_db
 from models.user import User
 from schemas.user import UserRead
-from services.cos import StorageManager
+from services.cos import COSStorageService, ImageProcessor, StorageManager
 import shutil
 import os
 import uuid
+import asyncio
+import tempfile
+from datetime import datetime
+from core.logger import get_logger
 
 router = APIRouter(prefix="/users")
 
@@ -225,23 +229,41 @@ def update_avatar(user_id: int, avatar_url: str, current_user: User = Depends(ge
     return {"code": 200, "msg": "头像更新成功", "data": True}
 
 @router.post("/upload_avatar")
-def upload_avatar(file: UploadFile = File(...)):
-    """上传头像并返回URL"""
-    if not os.path.exists("static/uploads"):
-        os.makedirs("static/uploads")
+async def upload_avatar(file: UploadFile = File(...), current_user: User = Depends(get_current_user)):
+    """上传头像并返回COS URL"""
+    try:
+        cos_service = COSStorageService()
 
-    file_extension = os.path.splitext(file.filename)[1]
-    filename = f"{uuid.uuid4()}{file_extension}"
-    file_path = f"static/uploads/{filename}"
+        # 保存上传的文件到临时目录
+        temp_dir = tempfile.gettempdir()
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        file_extension = os.path.splitext(file.filename)[1] if file.filename else ".png"
+        local_path = os.path.join(temp_dir, f"avatar_{current_user.id}_{timestamp}{file_extension}")
 
-    # Assuming the server is running on localhost:8000 or configured domain
-    # For now returning relative path or absolute URL if domain is known
-    # Better to return relative path and let frontend prepend base URL
-    url = f"/static/uploads/{filename}"
-    return {"code": 200, "msg": "Upload successful", "data": {"url": url}}
+        with open(local_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        # 上传到 COS (头像单独路径)
+        result = await cos_service.upload_image(
+            file_path=local_path,
+            user_id=current_user.id,
+            drawing_id=0,  # 头像用 0 作为特殊标记
+            is_thumbnail=False,
+            is_avatar=True
+        )
+
+        # 清理临时文件
+        try:
+            os.remove(local_path)
+        except:
+            pass
+
+        return {"code": 200, "msg": "上传成功", "data": {"url": result["cos_url"]}}
+    except Exception as e:
+        logger = get_logger(__name__)
+        logger.error(f"头像上传失败: {e}")
+        raise HTTPException(status_code=500, detail=f"头像上传失败: {str(e)}")
 
 
 @router.get("/me/storage")
