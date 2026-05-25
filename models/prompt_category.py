@@ -14,4 +14,5 @@ class PromptCategory(Base):
     display_name = Column(String(256), nullable=False)
     icon = Column(String(64), nullable=True, default="Box")
     sort_order = Column(Integer, nullable=True, server_default=text("0"))
+    is_hidden = Column(Integer, nullable=True, server_default=text("0"))
 

@@ -77,11 +77,17 @@ DEFAULT_CATEGORY_TREE = [
     }
 ]
 
-def _categories(db: Session, user_id: int = None):
+def _categories(db: Session, user_id: int = None, is_admin: bool = False):
     """从数据库聚合生成分类树结构。"""
-    cats = db.query(PromptCategory).order_by(PromptCategory.sort_order).all()
-    subs = db.query(PromptSubcategory).order_by(PromptSubcategory.sort_order).all()
-    keywords = db.query(PromptKeyword).all() # 如果数据量大应该优化，但目前 seed 数据不多
+    # 管理员看到所有分类（包括隐藏的），普通用户只看显示的
+    if is_admin:
+        cats = db.query(PromptCategory).order_by(PromptCategory.sort_order).all()
+        subs = db.query(PromptSubcategory).order_by(PromptSubcategory.sort_order).all()
+        keywords = db.query(PromptKeyword).all()
+    else:
+        cats = db.query(PromptCategory).filter(PromptCategory.is_hidden != 1).order_by(PromptCategory.sort_order).all()
+        subs = db.query(PromptSubcategory).filter(PromptSubcategory.is_hidden != 1).order_by(PromptSubcategory.sort_order).all()
+        keywords = db.query(PromptKeyword).filter(PromptKeyword.is_hidden != 1).all()
 
     # 获取用户收藏的提示词ID
     fav_keyword_ids = set()
@@ -109,24 +115,29 @@ def _categories(db: Session, user_id: int = None):
             "used_count": user_usage_map.get(k.id, 0),
             "created_by": k.created_by, # Standardize
             "user_id": k.created_by, # Keep for backward compatibility if needed
-            "small_category_id": k.small_category_id # 用于统计记录
+            "small_category_id": k.small_category_id, # 用于统计记录
+            "is_hidden": k.is_hidden
         })
 
     # 构建 Subcategory Map: cat_id -> [subcategories]
     sub_map = {}
     for s in subs:
         sub_map.setdefault(s.category_id, []).append({
+            "id": s.id,
             "name": s.name,
             "label": s.display_name,
+            "is_hidden": s.is_hidden,
             "children": kw_map.get(s.id, [])
         })
 
     result = []
     for c in cats:
         result.append({
+            "id": c.id,
             "name": c.name,
             "label": c.display_name,
             "icon": c.icon or "Box",
+            "is_hidden": c.is_hidden,
             "children": sub_map.get(c.id, [])
         })
 
@@ -281,7 +292,8 @@ def get_prompt_category(
 ):
     """返回分类树结构：`{ code, msg, data: { promptCatagory: [...] } }`。"""
     user_id = current_user.id if current_user else None
-    data = {"promptCatagory": _categories(db, user_id)}
+    is_admin = current_user.role == 'admin' if current_user else False
+    data = {"promptCatagory": _categories(db, user_id, is_admin)}
     return {"code": 200, "msg": "OK", "data": data}
 
 @router.post("/getDropdown")

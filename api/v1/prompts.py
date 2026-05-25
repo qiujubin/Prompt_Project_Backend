@@ -354,3 +354,119 @@ def get_category_tree(category_id: int, db: Session = Depends(get_db)):
 
     return {"code": 200, "msg": "OK", "data": result}
 
+
+# ==========================================
+# Show/Hide API Endpoints
+# ==========================================
+
+@router.put("/keywords/{keyword_id}/visibility")
+def set_keyword_visibility(
+    keyword_id: int,
+    is_hidden: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    设置提示词的显示/隐藏状态。
+    - is_hidden: 1=隐藏, 0=显示
+    - 用户只能操作自己创建的提示词。
+    - 管理员可以操作所有提示词。
+    """
+    keyword = db.query(PromptKeyword).filter(PromptKeyword.id == keyword_id).first()
+    if not keyword:
+        raise HTTPException(status_code=404, detail="提示词不存在")
+
+    # 权限检查
+    is_admin = (current_user.role == 'admin')
+    is_owner = (keyword.created_by == current_user.id)
+
+    if not (is_admin or is_owner):
+        raise HTTPException(status_code=403, detail="无权限操作此提示词")
+
+    keyword.is_hidden = is_hidden
+    db.commit()
+    return {"code": 200, "msg": "设置成功", "data": {"is_hidden": is_hidden}}
+
+
+@router.put("/subcategories/{subcategory_id}/visibility")
+def set_subcategory_visibility(
+    subcategory_id: int,
+    is_hidden: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    设置小分类的显示/隐藏状态。
+    - is_hidden: 1=隐藏, 0=显示
+    - 仅管理员可操作。
+    """
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="仅管理员可操作")
+
+    subcategory = db.query(PromptSubcategory).filter(PromptSubcategory.id == subcategory_id).first()
+    if not subcategory:
+        raise HTTPException(status_code=404, detail="小分类不存在")
+
+    subcategory.is_hidden = is_hidden
+    db.commit()
+    return {"code": 200, "msg": "设置成功", "data": {"is_hidden": is_hidden}}
+
+
+@router.put("/categories/{category_id}/visibility")
+def set_category_visibility(
+    category_id: int,
+    is_hidden: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    设置大分类的显示/隐藏状态。
+    - is_hidden: 1=隐藏, 0=显示
+    - 仅管理员可操作。
+    """
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="仅管理员可操作")
+
+    category = db.query(PromptCategory).filter(PromptCategory.id == category_id).first()
+    if not category:
+        raise HTTPException(status_code=404, detail="大分类不存在")
+
+    category.is_hidden = is_hidden
+    db.commit()
+    return {"code": 200, "msg": "设置成功", "data": {"is_hidden": is_hidden}}
+
+
+# ==========================================
+# Admin endpoints - 获取所有分类（包括隐藏的）
+# ==========================================
+
+@router.get("/admin/categories/all")
+def get_all_categories_admin(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    获取所有大分类（包括隐藏的），仅管理员可用。
+    用于管理员管理分类的显示/隐藏状态。
+    """
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="仅管理员可操作")
+
+    cats = db.query(PromptCategory).order_by(PromptCategory.sort_order).all()
+    return {"code": 200, "msg": "OK", "data": cats}
+
+
+@router.get("/admin/subcategories/all")
+def get_all_subcategories_admin(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    获取所有小分类（包括隐藏的），仅管理员可用。
+    """
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="仅管理员可操作")
+
+    subs = db.query(PromptSubcategory).order_by(PromptSubcategory.sort_order).all()
+    return {"code": 200, "msg": "OK", "data": subs}
+

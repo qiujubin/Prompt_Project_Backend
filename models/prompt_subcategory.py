@@ -14,4 +14,5 @@ class PromptSubcategory(Base):
     name = Column(String(128), nullable=False)
     display_name = Column(String(256), nullable=False)
     sort_order = Column(Integer, nullable=True, server_default=text("0"))
+    is_hidden = Column(Integer, nullable=True, server_default=text("0"))
 

@@ -6,6 +6,7 @@ class PromptCategoryRead(BaseModel):
     name: str
     display_name: str
     sort_order: Optional[int] = 0
+    is_hidden: Optional[int] = 0
     class Config:
         from_attributes = True
 
@@ -18,6 +19,7 @@ class PromptCategoryUpdate(BaseModel):
     name: Optional[str] = None
     display_name: Optional[str] = None
     sort_order: Optional[int] = None
+    is_hidden: Optional[int] = None
 
 class PromptSubcategoryRead(BaseModel):
     id: int
@@ -25,6 +27,7 @@ class PromptSubcategoryRead(BaseModel):
     name: str
     display_name: str
     sort_order: Optional[int] = 0
+    is_hidden: Optional[int] = 0
     class Config:
         from_attributes = True
 
@@ -39,6 +42,7 @@ class PromptSubcategoryUpdate(BaseModel):
     name: Optional[str] = None
     display_name: Optional[str] = None
     sort_order: Optional[int] = None
+    is_hidden: Optional[int] = None
 
 class PromptKeywordRead(BaseModel):
     id: int
@@ -46,6 +50,7 @@ class PromptKeywordRead(BaseModel):
     small_category_id: Optional[int] = None
     created_by: Optional[int] = None
     usage_count: Optional[int] = 0
+    is_hidden: Optional[int] = 0
     class Config:
         from_attributes = True
 
@@ -60,6 +65,7 @@ class PromptKeywordUpdate(BaseModel):
     display_name: Optional[str] = None
     small_category_id: Optional[int] = None
     created_by: Optional[int] = None
+    is_hidden: Optional[int] = None
 
 class PromptTreeItem(BaseModel):
     name: str
