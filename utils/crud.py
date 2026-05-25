@@ -34,10 +34,13 @@ def create_crud_router(model: Type, read_schema: Type, create_schema: Type, upda
         """分页列出资源，支持简单模糊查询。"""
         stmt = select(model)
         if q:
+            search_conditions = []
             for field in STRING_SEARCH_FIELDS:
                 if hasattr(model, field):
-                    stmt = stmt.where(getattr(model, field).ilike(f"%{q}%"))
-                    break
+                    search_conditions.append(getattr(model, field).ilike(f"%{q}%"))
+            if search_conditions:
+                from sqlalchemy import or_
+                stmt = stmt.where(or_(*search_conditions))
         
         # 计算总数
         # 注意：在大数据量下建议优化 count 查询
