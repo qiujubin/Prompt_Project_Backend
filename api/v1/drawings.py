@@ -183,7 +183,28 @@ def list_drawings(
             .limit(size)\
             .all()
 
-    return {"code": 200, "msg": "OK", "data": drawings, "total": total}
+    # 填充作者信息
+    result = []
+    for d in drawings:
+        user = db.query(User).filter(User.id == d.user_id).first()
+        item = {
+            "id": d.id,
+            "user_id": d.user_id,
+            "username": user.username if user else None,
+            "prompt": d.prompt,
+            "negative_prompt": d.negative_prompt,
+            "model_name": d.model_name,
+            "image_url": d.image_url,
+            "status": d.status,
+            "width": d.width,
+            "height": d.height,
+            "seed": d.seed,
+            "created_at": d.created_at,
+            "is_public": d.is_public,
+        }
+        result.append(item)
+
+    return {"code": 200, "msg": "OK", "data": result, "total": total}
 
 
 @router.delete("/{drawing_id}")
