@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
+from sqlalchemy import or_
 from core.security import decode_token
 from database import get_db
 from models.user import User
@@ -66,7 +67,13 @@ def list_users(page: int = 1, size: int = 10, q: Optional[str] = None, current: 
         raise HTTPException(status_code=403, detail="无权限")
     query = db.query(User)
     if q:
-        query = query.filter(User.username.ilike(f"%{q}%"))
+        query = query.filter(
+            or_(
+                User.username.ilike(f"%{q}%"),
+                User.email.ilike(f"%{q}%"),
+                User.phone.ilike(f"%{q}%")
+            )
+        )
 
     total = query.count()
     items = query.order_by(User.id.desc()).offset((page - 1) * size).limit(size).all()
